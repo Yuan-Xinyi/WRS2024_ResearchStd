@@ -1,0 +1,87 @@
+<Comment> {
+  "egg-texture-cards -o buttonrestart_maps.egg -p 50,100 buttonrestart_ready.jpg buttonrestart_click.jpg buttonrestart_rollover.jpg"
+}
+<Texture> buttonrestart_rollover {
+  buttonrestart_rollover.jpg
+}
+<Texture> buttonrestart_ready {
+  buttonrestart_ready.jpg
+}
+<Texture> buttonrestart_click {
+  buttonrestart_click.jpg
+}
+<Group> {
+  <Switch> { 1 }
+  <Scalar> fps { 2 }
+  <VertexPool> vpool {
+    <Vertex> 0 {
+      -1 0.25 0
+      <UV> { 0 1 }
+    }
+    <Vertex> 1 {
+      -1 -0.25 0
+      <UV> { 0 0 }
+    }
+    <Vertex> 2 {
+      1 -0.25 0
+      <UV> { 1 0 }
+    }
+    <Vertex> 3 {
+      1 0.25 0
+      <UV> { 1 1 }
+    }
+    <Vertex> 4 {
+      -1 0.25 0
+      <UV> { 0 1 }
+    }
+    <Vertex> 5 {
+      -1 -0.25 0
+      <UV> { 0 0 }
+    }
+    <Vertex> 6 {
+      1 -0.25 0
+      <UV> { 1 0 }
+    }
+    <Vertex> 7 {
+      1 0.25 0
+      <UV> { 1 1 }
+    }
+    <Vertex> 8 {
+      -1 0.25 0
+      <UV> { 0 1 }
+    }
+    <Vertex> 9 {
+      -1 -0.25 0
+      <UV> { 0 0 }
+    }
+    <Vertex> 10 {
+      1 -0.25 0
+      <UV> { 1 0 }
+    }
+    <Vertex> 11 {
+      1 0.25 0
+      <UV> { 1 1 }
+    }
+  }
+  <Group> buttonrestart_ready {
+    <Polygon> {
+      <RGBA> { 1 1 1 1 }
+      <TRef> { buttonrestart_ready }
+      <VertexRef> { 0 1 2 3 <Ref> { vpool } }
+    }
+  }
+  <Group> buttonrestart_click {
+    <Polygon> {
+      <RGBA> { 1 1 1 1 }
+      <TRef> { buttonrestart_click }
+      <VertexRef> { 4 5 6 7 <Ref> { vpool } }
+    }
+  }
+  <Group> buttonrestart_rollover {
+    <Polygon> {
+      <RGBA> { 1 1 1 1 }
+      <TRef> { buttonrestart_rollover }
+      <VertexRef> { 8 9 10 11 <Ref> { vpool } }
+    }
+  }
+}

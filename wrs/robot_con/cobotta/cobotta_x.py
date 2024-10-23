@@ -2,6 +2,10 @@ import time
 import numpy.typing as npt
 from typing import List
 import wrs.motion.trajectory.topp_ra as trajp
+import wrs.drivers.orin_bcap.bcapclient as bcapclient
+import numpy as np
+import copy
+import math
 
 
 class CobottaX(object):
@@ -55,7 +59,7 @@ class CobottaX(object):
         new_path.append(path[-1])
         path = new_path
         max_vels = [math.pi * .6, math.pi * .4, math.pi, math.pi, math.pi, math.pi * 1.5]
-        interpolated_confs = \
+        _,interpolated_confs,_,_ = \
             trajp.generate_time_optimal_trajectory(path,
                                                    max_vels=max_vels,
                                                    ctrl_freq=.008)
@@ -84,20 +88,22 @@ class CobottaX(object):
         return_value[3:6] = np.radians(return_value[3:6])
         return return_value
 
-    def move_jnts(self, jnt_values: npt.NDArray[float]):
+    def move_jnts(self, jnt_values: npt.NDArray[float], speed = 100):
         """
         :param jnt_values:  1x6 np array
         :return:
         author: weiwei
         date: 20210507
         """
+        jnt_values_radians = copy.deepcopy(jnt_values)
         jnt_values_degree = np.degrees(jnt_values)
-        self.bcc.robot_move(self.hrbt, 1, [jnt_values_degree.tolist(), "J", "@E"], "")
+        self.bcc.robot_move(self.hrbt, 1, [jnt_values_degree.tolist(), "J", "@E"], f"SPEED={speed}")
 
-    def move_pose(self, pose_value):
+    def move_pose(self, pose, speed = 100):
+        pose_value = copy.deepcopy(pose)
         pose_value[:3] *= 1000
         pose_value[3:6] = np.degrees(pose_value[3:6])
-        self.bcc.robot_move(self.hrbt, 1, [pose_value.tolist(), "P", "@E"], "")
+        self.bcc.robot_move(self.hrbt, 1, [pose_value.tolist(), "P", "@E"], f"SPEED={speed}")
 
     def open_gripper(self, dist=.03):
         """
@@ -115,33 +121,72 @@ class CobottaX(object):
         assert 0 <= dist <= .03
         self.bcc.controller_execute(self.hctrl, "HandMoveA", [dist * 1000, 100])
 
+    def P2J(self, pose):
+        pose = np.array(pose)
+        pose_value = copy.deepcopy(pose)
+        pose_value[:3] *= 1000
+        pose_value[3:6] = np.degrees(pose_value[3:6])
+        return np.radians(self.bcc.robot_execute(self.hrbt, "P2J", pose_value.tolist()))[:6]
+
+    def is_pose_reachable(self, pose):
+        pose_value = copy.deepcopy(pose)
+        pose_value = np.array(pose_value)
+        if pose_value.shape[0] == 7:
+            pose_value[:3] *= 1000
+            pose_value[3:6] = np.degrees(pose_value[3:6])
+            out_range = self.bcc.robot_execute(self.hrbt, "OutRange", f"P{tuple(pose_value)}")
+        elif pose_value.shape[0] == 6:
+            jnt_values_degree = np.degrees(pose_value)
+            out_range = self.bcc.robot_execute(self.hrbt, "OutRange", f"J{tuple(jnt_values_degree)}")
+        else:
+            print("The position data is wrong")
+            return False
+        if out_range == 0:
+            print("reachable")
+            return True
+        else:
+            print(f"Axis {out_range} out of range")
+            return False
 
 if __name__ == '__main__':
     import math
     import numpy as np
-    from wrs import basis as rm, drivers as bcapclient, robot_sim as cbt, motion as rrtc, modeling as gm
+
     import wrs.visualization.panda.world as wd
 
-    base = wd.World(cam_pos=[1, 1, .5], lookat_pos=[0, 0, .2])
-    gm.gen_frame().attach_to(base)
+    # base = wd.World(cam_pos=[1, 1, .5], lookat_pos=[0, 0, .2])
+    # gm.gen_frame().attach_to(base)
+    #
+    # robot_s = cbt.Cobotta()
+    # robot_x = CobottaX()
+    # start_conf = robot_x.get_jnt_values()
+    # print("start_radians", start_conf)
+    # tgt_pos = np.array([.25, .2, .15])
+    # tgt_rotmat = rm.rotmat_from_axangle([0, 1, 0], math.pi * 2 / 3)
+    # jnt_values = robot_s.ik(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat)
+    # rrtc_planner = rrtc.RRTConnect(robot_s)
+    # path = rrtc_planner.plan(component_name="arm",
+    #                          start_conf=start_conf,
+    #                          goal_conf=jnt_values,
+    #                          ext_dist=.1,
+    #                          max_time=300)
+    # robot_x.move_jnts_motion(path)
+    # robot_x.close_gripper()
+    # for pose in path:
+    #     robot_s.fk("arm", pose)
+    #     robot_meshmodel = robot_s.gen_meshmodel()
+    #     robot_meshmodel.attach_to(base)
+    # base.run()
+    robot_x = CobottaX(host="192.168.0.11")
+    # current pose info
+    np.set_printoptions(linewidth=np.inf)
+    print(f"current pose: np.{repr(robot_x.get_pose_values())}")
+    print(f"current jnt_values: np.{repr(robot_x.get_jnt_values())}")
+    print(repr(np.degrees(robot_x.get_jnt_values())))
+    current_pose = robot_x.get_pose_values()
+    print(robot_x.is_pose_reachable(current_pose))
 
-    robot_s = cbt.Cobotta()
-    robot_x = CobottaX()
-    start_conf = robot_x.get_jnt_values()
-    print("start_radians", start_conf)
-    tgt_pos = np.array([.25, .2, .15])
-    tgt_rotmat = rm.rotmat_from_axangle([0, 1, 0], math.pi * 2 / 3)
-    jnt_values = robot_s.ik(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat)
-    rrtc_planner = rrtc.RRTConnect(robot_s)
-    path = rrtc_planner.plan(component_name="arm",
-                             start_conf=start_conf,
-                             goal_conf=jnt_values,
-                             ext_dist=.1,
-                             max_time=300)
-    robot_x.move_jnts_motion(path)
-    robot_x.close_gripper()
-    for pose in path:
-        robot_s.fk("arm", pose)
-        robot_meshmodel = robot_s.gen_meshmodel()
-        robot_meshmodel.attach_to(base)
-    base.run()
+
+    # robot_x.move_pose(np.array([ 0.3219858 , -0.01606794,  0.0731271 , -2.70914075,  1.38747582, -1.29101137,  1.        ]))
+
+

@@ -1,7 +1,8 @@
 import copy
 
 import numpy as np
-from wrs import basis as rm, robot_sim as cbtr, modeling as gm, modeling as cm
+from wrs import rm, mgm, mcm
+import wrs.robot_sim.robots.cobotta.cobotta_ripps as cbtr
 import wrs.visualization.panda.world as wd
 import utils
 
@@ -10,13 +11,13 @@ class Env(object):
     def __init__(self, rbt_s, armname="arm"):
         self.rbt_s = rbt_s
         self.armname = armname
-        self.pipette_pos = self.rbt_s.arm.jlc._loc_flange_pos - np.array([-0.008, -0.14085, 0.06075])
-        self.tcp_loc_pos = self.rbt_s.arm.jlc._loc_flange_pos
+        self.pipette_pos = self.rbt_s.manipulator.jlc._loc_flange_pos - np.array([-0.008, -0.14085, 0.06075])
+        self.tcp_loc_pos = self.rbt_s.manipulator.jlc._loc_flange_pos
         self.env_build()
         # self.load_pipette()
 
     def load_pipette(self):
-        self.outside = cm.CollisionModel("./meshes/model_base.stl", cdprim_type="box")
+        self.outside = mcm.CollisionModel("./meshes/model_base.stl", cdprim_type="box")
         pipettemat4 = rm.homomat_from_posrot(self.pipette_pos, np.eye(3))
         eepos, eerot = self.rbt_s.get_gl_tcp(manipulator_name=self.armname)
         tcpmat4 = np.dot(rm.homomat_from_posrot(eepos, eerot), np.linalg.inv(pipettemat4))
@@ -24,7 +25,7 @@ class Env(object):
         self.outside.set_pos(tcpmat4[:3, 3])
         self.outside.set_rotmat(tcpmat4[:3, :3])
         self.rbt_s.hold(self.armname, self.outside)
-        self.pipette = cm.CollisionModel("./meshes/model_tip.stl", cdprim_type="box", ex_radius=0.01)
+        self.pipette = mcm.CollisionModel("./meshes/model_tip.stl", cdprim_type="box", ex_radius=0.01)
         pipettemat4 = rm.homomat_from_posrot(self.pipette_pos, np.eye(3))
         eepos, eerot = self.rbt_s.get_gl_tcp(manipulator_name=self.armname)
         tcpmat4 = np.dot(rm.homomat_from_posrot(eepos, eerot), np.linalg.inv(pipettemat4))
@@ -41,12 +42,12 @@ class Env(object):
     #     self.rbt_s.release(self.armname, self.current_tip)
 
     def env_build(self):
-        table_plate = cm.gen_box(xyz_lengths=[.405, .26, .003])
+        table_plate = mcm.gen_box(xyz_lengths=[.405, .26, .003])
         table_plate.set_pos([0.07 + 0.2025, .055, .0015])
         table_plate.set_rgba([.87, .87, .87, 1])
         table_plate.attach_to(base)
 
-        self.frame_bottom = cm.CollisionModel("./meshes/frame_bottom.stl")
+        self.frame_bottom = mcm.CollisionModel("./meshes/frame_bottom.stl")
         self.frame_bottom.set_rgba([.55, .55, .55, 1])
         self.frame_bottom.attach_to(base)
 
@@ -68,12 +69,12 @@ class Env(object):
         # self.tip_cm.set_rotmat(rm.rotmat_from_axangle(np.array([0, 0, 1]), math.pi / 2))
         # self.tip_cm.attach_to(base)
 
-        dispose_box = cm.CollisionModel("./meshes/tip_rack_cover.stl", ex_radius=.007)
+        dispose_box = mcm.CollisionModel("./meshes/tip_rack_cover.stl", ex_radius=.007)
         dispose_box.set_rgba([140 / 255, 110 / 255, 170 / 255, 1])
         dispose_box.set_pos(pos=np.array([.12, 0.12, .003]))
         dispose_box.attach_to(base)
 
-        self.dispose_box_cm = cm.CollisionModel("./meshes/tip_rack_cover.stl", ex_radius=.007)
+        self.dispose_box_cm = mcm.CollisionModel("./meshes/tip_rack_cover.stl", ex_radius=.007)
         self.dispose_box_cm.set_pos(pos=np.array([.16, 0.12, .015]))
 
         # box_chemical = mcm.CollisionModel("./meshes/96_well.stl", ex_radius=0.)  # 128*85
@@ -122,7 +123,7 @@ class Env(object):
 
 if __name__ == '__main__':
     base = wd.World(cam_pos=[-0.331782, 1.2348, 0.634336], lookat_pos=[-0.0605939, 0.649106, 0.311471])
-    gm.gen_frame().attach_to(base)
+    mgm.gen_frame().attach_to(base)
     component_name = 'arm'
     robot_s = cbtr.CobottaRIPPS()
     env = Env(robot_s)
@@ -136,7 +137,7 @@ if __name__ == '__main__':
     env.tip_rack.attach_to(base)
     env.deep_plate.attach_to(base)
 
-    tip = cm.CollisionModel("./meshes/tip.stl")
+    tip = mcm.CollisionModel("./meshes/tip.stl")
     tip.set_rgba([200 / 255, 180 / 255, 140 / 255, 1])
     for tip_id in range(96):
         pos_rack = env.tip_rack._hole_pos_list[tip_id]

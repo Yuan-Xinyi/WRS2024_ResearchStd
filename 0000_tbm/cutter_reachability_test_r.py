@@ -32,7 +32,7 @@ for step in [1, 2, 3, 4]:
         for tmb_x in [0, -.2]:
             rbt_s.fix_to(pos=np.array([-1.726-0.35+tmb_x, 2.624-0.275, 5.323]), rotmat=np.eye(3))
             try:
-                jnt_values, _ = ik_s.solve(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat, seed_jnt_values= rbt_s.arm.home_conf)
+                jnt_values, _ = ik_s.solve(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat, seed_jnt_values= rbt_s.manipulator.home_conf)
             except:
                 continue
             # try:

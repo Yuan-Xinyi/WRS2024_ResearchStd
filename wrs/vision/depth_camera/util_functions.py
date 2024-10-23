@@ -2,7 +2,7 @@ import numpy as np
 import copy
 import open3d as o3d
 import sklearn.cluster as skc
-from wrs import vision as pda
+import wrs.vision.depth_camera.pcd_data_adapter as pda
 
 
 def __draw_registration_result(source_o3d, target_o3d, transformation):

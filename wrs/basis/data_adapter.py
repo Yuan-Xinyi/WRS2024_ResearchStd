@@ -329,6 +329,7 @@ def pdgeom_from_v(vertices: np.ndarray,
     """
     if not isinstance(rgba, np.ndarray):
         raise ValueError('rgba must be an nparray!')
+    n_color_bit = 3
     if rgba.ndim == 1:
         vertex_rgbas = np.tile((rgba * 255).astype(np.uint8), (len(vertices), 1))
         n_color_bit = len(rgba)

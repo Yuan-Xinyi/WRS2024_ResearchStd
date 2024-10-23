@@ -1,8 +1,8 @@
 import numpy as np
-from wrs import basis as rm, modeling as cm
+from wrs import rm, mcm
 
 
-class Base(cm.CollisionModel):
+class Base(mcm.CollisionModel):
     def __init__(self, file):
         super().__init__(initor=file, ex_radius=.009)
         self._hole_pos_list = []
@@ -86,6 +86,7 @@ class Base96(Base):
     def __init__(self, file):
         super().__init__(file)
 
+micro = Base96("./meshes/box_mbp.stl")
 
 class Microplate96(Base96):
     def __init__(self, file):

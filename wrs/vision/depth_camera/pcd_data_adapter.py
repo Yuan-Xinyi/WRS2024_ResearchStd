@@ -26,7 +26,7 @@ def nparray_to_o3dpcd(nx3nparray_pnts, nx3nparray_nrmls=None, estimate_normals=F
     return o3d_pcd
 
 
-def o3dpcd_to_parray(o3d_pcd, return_normals=False):
+def o3dpcd_to_nparray(o3d_pcd, return_normals=False):
     """
     :param o3d_pcd: open3d point cloud
     :param estimate_normals

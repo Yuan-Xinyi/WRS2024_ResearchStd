@@ -1,6 +1,7 @@
 # common
 from .basis import robot_math as rm
 from .modeling import collision_model as mcm
+from .modeling import model_collection as mmc
 from .modeling import geometric_model as mgm
 from .visualization.panda import world as wd
 

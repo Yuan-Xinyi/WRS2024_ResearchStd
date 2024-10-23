@@ -416,30 +416,30 @@ if __name__ == '__main__':
 
     def update(anime_data, task):
         if anime_data.counter == 0:
-            anime_data.arm.backup_state()
+            anime_data.manipulator.backup_state()
         if anime_data.counter >= len(anime_data.motion_data):
-            anime_data.arm.restore_state()
+            anime_data.manipulator.restore_state()
             if len(anime_data.robot_attached_list) != 0:
                 for robot_attached in anime_data.robot_attached_list:
                     robot_attached.detach()
             anime_data.robot_attached_list.clear()
             anime_data.counter = 0
-            anime_data.arm.backup_state()
+            anime_data.manipulator.backup_state()
         if len(anime_data.robot_attached_list) > 1:
             for robot_attached in anime_data.robot_attached_list:
                 robot_attached.detach()
         conf = anime_data.motion_data.conf_list[anime_data.counter]
         jaw_width = anime_data.motion_data.jaw_width_list[anime_data.counter]
-        anime_data.arm.goto_given_conf(jnt_values=conf)
+        anime_data.manipulator.goto_given_conf(jnt_values=conf)
         if jaw_width is not None:
             if anime_data.motion_data.hold_list[anime_data.counter] is not None:
                 obj_cmodel = anime_data.motion_data.hold_list[anime_data.counter]
-                anime_data.arm.hold(obj_cmodel, jaw_width=jaw_width)
+                anime_data.manipulator.hold(obj_cmodel, jaw_width=jaw_width)
             elif anime_data.motion_data.release_list[anime_data.counter] is not None:
                 obj_cmodel = anime_data.motion_data.release_list[anime_data.counter]
-                anime_data.arm.release(obj_cmodel, jaw_width=jaw_width)
+                anime_data.manipulator.release(obj_cmodel, jaw_width=jaw_width)
             else:
-                anime_data.arm.change_jaw_width(jaw_width=jaw_width)
+                anime_data.manipulator.change_jaw_width(jaw_width=jaw_width)
         robot_meshmodel = anime_data.robot.gen_meshmodel(toggle_cdprim=False, alpha=1)
         robot_meshmodel.attach_to(base)
         anime_data.robot_attached_list.append(robot_meshmodel)

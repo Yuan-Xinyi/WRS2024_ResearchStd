@@ -44,7 +44,7 @@ def import_port_handler(module_path: str):
         raise ImportError(f"Could not import the special model '{module_path}'")
 
 
-PortHandler = import_port_handler('drivers.devices.dynamixel_sdk.port_handler')
+PortHandler = import_port_handler('wrs.drivers.devices.dynamixel_sdk.port_handler')
 
 __VERSION__ = '0.0.3'
 
@@ -171,6 +171,19 @@ class DynamixelMotor(object):
         else:
             return False
 
+    def rebot_dxl(self, dxl_id: int):
+        dxl_comm_result, dxl_error = self._packet_handler.reboot(port=self._port_handler,
+                                                                 dxl_id=dxl_id)
+        if dxl_comm_result != COMM_SUCCESS:
+            # print("%s" % self._packet_handler.getTxRxResult(dxl_comm_result))
+            return False
+        elif dxl_error != 0:
+            # print("%s" % self._packet_handler.getRxPacketError(dxl_error))
+            return False
+        else:
+            print("Dynamixel has been successfully connected")
+            return True
+
     def enable_dxl_torque(self, dxl_id: int) -> bool:
         """
         Enable the torque of the motor
@@ -214,9 +227,14 @@ class DynamixelMotor(object):
         :param tgt_pos: the target position of the motor
         :param dxl_id: the id of the motor
         :return: True if the goal position is set, False otherwise
+
+        !!! Limited in range (0,4095) under Position Control Mode (3)
         """
         assert isinstance(tgt_pos, int)
-        assert self._control_table.DXL_MIN_POSITION_VAL <= tgt_pos <= self._control_table.DXL_MAX_POSITION_VAL
+        if self.get_dxl_op_mode(dxl_id) == 3:
+            assert self._control_table.DXL_MIN_POSITION_VAL <= tgt_pos <= self._control_table.DXL_MAX_POSITION_VAL
+        elif self.get_dxl_op_mode(dxl_id) in (4, 5):
+            assert -1048575 <= tgt_pos <= 1048575
         dxl_comm_result, dxl_error = self._packet_handler.write4ByteTxRx(port=self._port_handler,
                                                                          dxl_id=dxl_id,
                                                                          address=self._control_table.ADDR_GOAL_POSITION,
@@ -365,18 +383,33 @@ class DynamixelMotor(object):
             # print("%s" % self._packet_handler.getTxRxResult(dxl_comm_result))
             return False
         elif dxl_error != 0:
-            # print("%s" % self._packet_handler.getRxPacketError(dxl_error))
+            print("%s" % self._packet_handler.getRxPacketError(dxl_error))
             return False
         else:
             return True
 
-    def set_dxl_goal_vel(self, tgt_vel: int = 0) -> bool:
+    def set_dxl_goal_vel(self, tgt_vel: int = 100, dxl_id: int = 1) -> bool:
         """
         Set the goal velocity of the motor
         :param tgt_vel: the target velocity of the motor
         :return: True if the goal velocity is set, False otherwise
         """
-        raise NotImplementedError
+        if self.get_dxl_op_mode(dxl_id) != 1:
+            self.disable_dxl_torque(dxl_id)
+            self.set_dxl_op_mode(1, dxl_id)
+            self.enable_dxl_torque(dxl_id)
+        dxl_comm_result, dxl_error = self._packet_handler.write4ByteTxRx(port=self._port_handler,
+                                                                         dxl_id=dxl_id,
+                                                                         address=self._control_table.ADDR_GOAL_VELOCITY,
+                                                                         data=tgt_vel)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self._packet_handler.getTxRxResult(dxl_comm_result))
+            return False
+        elif dxl_error != 0:
+            print("%s" % self._packet_handler.getRxPacketError(dxl_error))
+            return False
+        else:
+            return True
 
     def set_dxl_goal_current(self, tgt_current: int, dxl_id: int):
         """
@@ -575,8 +608,8 @@ class DynamixelMotor(object):
 
 if __name__ == "__main__":
 
-    peripheral_baud = 115200
-    com = 'COM7'
+    peripheral_baud = 57600
+    com = 'COM6'
     dxl_con = DynamixelMotor(com, baud_rate=peripheral_baud)
     # r = dxl_con.ping()
     # print(dxl_con.get_dxl_position_p_gain())
@@ -600,7 +633,7 @@ if __name__ == "__main__":
     # # exit(0)
     # dxl_con.set_dxl_position_p_gain(300, 1)
     print("?")
-    dxl_con.set_dxl_current_limit(400, 1)
+    dxl_con.set_dxl_current_limit(400, 10)
     print("!")
     dxl_con.set_dxl_current_limit(400, 2)
     print("!")

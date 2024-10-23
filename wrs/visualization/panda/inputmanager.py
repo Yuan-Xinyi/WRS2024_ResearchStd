@@ -33,7 +33,16 @@ class InputManager(DirectObject):
                        "a": False,
                        "d": False,
                        "g": False,
-                       "r": False}
+                       "r": False,
+                       "q": False,
+                       "e": False,
+                       "z": False,
+                       "x": False,
+                       "c": False,
+                       "v": False,
+                       "b": False,
+                       "n": False,
+                       }
         self.accept("mouse1", self.__setkeys, ["mouse1", True])
         self.accept("mouse1-up", self.__setkeys, ["mouse1", False])
         self.accept("mouse2", self.__setkeys, ["mouse2", True])
@@ -56,6 +65,22 @@ class InputManager(DirectObject):
         self.accept("g-up", self.__setkeys, ["g", False])
         self.accept("r", self.__setkeys, ["r", True])
         self.accept("r-up", self.__setkeys, ["r", False])
+        self.accept("q", self.__setkeys, ["q", True])
+        self.accept("q-up", self.__setkeys, ["q", False])
+        self.accept("e", self.__setkeys, ["e", True])
+        self.accept("e-up", self.__setkeys, ["e", False])
+        self.accept("z", self.__setkeys, ["z", True])
+        self.accept("z-up", self.__setkeys, ["z", False])
+        self.accept("x", self.__setkeys, ["x", True])
+        self.accept("x-up", self.__setkeys, ["x", False])
+        self.accept("c", self.__setkeys, ["c", True])
+        self.accept("c-up", self.__setkeys, ["c", False])
+        self.accept("v", self.__setkeys, ["v", True])
+        self.accept("v-up", self.__setkeys, ["v", False])
+        self.accept("b", self.__setkeys, ["b", True])
+        self.accept("b-up", self.__setkeys, ["b", False])
+        self.accept("n", self.__setkeys, ["n", True])
+        self.accept("n-up", self.__setkeys, ["n", False])
         self.setup_interactiongeometries()
 
     def __setkeys(self, key, value):

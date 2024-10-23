@@ -14,111 +14,15 @@ from panda3d.core import (Texture,
                           PerspectiveLens,
                           OrthographicLens,
                           PGTop,
-                          CardMaker)
+                          PNMImage,
+                          TextNode,
+                          PGMouseWatcherBackground)
 from direct.gui.OnscreenImage import OnscreenImage
+from direct.gui.OnscreenText import OnscreenText
 
-import wrs.basis.robot_math as rm
-import wrs.basis.data_adapter as da
 import wrs.visualization.panda.filter as flt
 import wrs.visualization.panda.inputmanager as im
 import wrs.visualization.panda.world as wd
-import wrs.modeling.geometric_model as mgm
-import wrs.modeling.model_collection as mmc
-
-class VirtualCamera(object):
-
-    def __init__(self, cam_pos, lookat_pos, resolution=np.array((512, 512)), screen_size=np.array((0.16, 0.16))):
-        """
-        :param cam_pos:
-        :param lookat_pos:
-        :param resolution:
-        :param cam_view_size: (1,2) np array, width x height, mm x mm
-        """
-        self._cam_pos = cam_pos
-        self._lookat_pos = lookat_pos
-        self.screen_size = screen_size
-        self._tex = Texture()
-        self._tex.setWrapU(Texture.WMClamp)
-        self._tex.setWrapV(Texture.WMClamp)
-        self._tex.setMinfilter(Texture.FTLinear)
-        self._tex.setMagfilter(Texture.FTLinear)
-        self._buffer = base.win.makeTextureBuffer("virtual_cam_buffer", resolution[0], resolution[1], self._tex, True)
-        self._buffer.setClearColor((1, 1, 1, 1))
-        self._pdnp = base.makeCamera(self._buffer, camName="virtual_cam")
-        self._pdnp.setPos(*cam_pos)
-        self._pdnp.lookAt(*lookat_pos)  # cam look at 0,1,0 by default in panda3d
-
-    @property
-    def cam_pos(self):
-        return np.array([*self._pdnp.getPos()])
-
-    @property
-    def cam_rotmat(self):
-        return np.array(self._pdnp.getMat().getUpper3()).T
-
-    def gen_framemodel(self, name="virtual_cam_frame_model", alpha=1):
-        m_col = mmc.ModelCollection(name=name)
-        cam_view_length = max(self.screen_size)
-        cam_length = cam_view_length * 1.25
-        cam_width = cam_length * 0.5
-        cam_lens_length = cam_length / 4
-        mgm.gen_frame_box(xyz_lengths=np.array([cam_width, cam_length, cam_width]),
-                          pos=self.cam_pos - (cam_length / 2 + cam_lens_length) * self.cam_rotmat[:, 1],
-                          rotmat=self.cam_rotmat, alpha=alpha).attach_to(m_col)
-        mgm.gen_frame_frustum(
-            bottom_xy_lengths=np.array([cam_width, cam_width]),
-            top_xy_lengths=np.array([cam_view_length, cam_view_length]),
-            height=cam_lens_length,
-            pos=self.cam_pos - (cam_lens_length) * self.cam_rotmat[:, 1],
-            rotmat=self.cam_rotmat @ rm.rotmat_from_euler(-np.pi / 2, 0, 0), alpha=alpha).attach_to(m_col)
-        return m_col
-
-    def gen_meshmodel(self, name="virtual_cam_frame_model", rgb=np.array([.3, .3, .3]), alpha=.3):
-        m_col = mmc.ModelCollection(name=name)
-        cam_view_length = max(self.screen_size)
-        cam_length = cam_view_length * 1.25
-        cam_width = cam_length * 0.4
-        cam_lens_length = cam_length / 4
-        mgm.gen_box(xyz_lengths=np.array([cam_width, cam_length, cam_width]),
-                    pos=self.cam_pos - (cam_length / 2 + cam_lens_length) * self.cam_rotmat[:, 1],
-                    rotmat=self.cam_rotmat, rgb=rgb, alpha=alpha).attach_to(m_col)
-        mgm.gen_frustrum(
-            bottom_xy_lengths=np.array([cam_width, cam_width]),
-            top_xy_lengths=np.array([cam_view_length, cam_view_length]),
-            height=cam_lens_length,
-            pos=self.cam_pos - (cam_lens_length) * self.cam_rotmat[:, 1],
-            rotmat=self.cam_rotmat @ rm.rotmat_from_euler(-np.pi / 2, 0, 0),
-            rgb=rgb, alpha=alpha).attach_to(m_col)
-        return m_col
-
-
-def attach_to(self, parent):
-    self._pdnp.reparentTo(parent)
-
-
-class Display(object):
-
-    def __init__(self, name, size=np.array([.1, .1]), pos=np.zeros(3), rotmat=np.eye(3)):
-        """
-        :param name:
-        :param size: (1,2) np array, width x height, mm x mm
-        :param pos:
-        :param rotmat:
-        """
-        self._pdcm = CardMaker(name)
-        self._pdcm.setFrame(-size[0] / 2, size[0] / 2, -size[1] / 2, size[1] / 2)
-        self._pdnp = NodePath(self._pdcm.generate())
-        self._pdnp.setTwoSided(True)
-        # self._pdnp.setMat(*rm.homomat_from_posrot(pos,
-        #                                           rm.rotmat_from_axangle(rotmat[:, 0], np.pi / 2) @ rotmat).T.flatten())
-        # self._pdnp.setPos(*pos)
-        # self._pdnp.setMat(da.npv3mat3_to_pdmat4(pos, rm.rotmat_from_axangle(rotmat[:, 0], np.pi / 2) @ rotmat))
-        self._pdnp.setMat(da.npv3mat3_to_pdmat4(pos, rotmat))
-
-    def attach_to(self, parent):
-        if isinstance(parent, VirtualCamera):
-            self._pdnp.reparentTo(parent._pdnp)
-            self._pdnp.setTexture(parent._tex)
 
 
 def img_to_n_channel(img, channel=3):
@@ -142,7 +46,7 @@ def letter_box(img, new_shape=(640, 640), color=(.45, .45, .45), auto=True, scal
 
     # Scale ratio (new / old)
     r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-    if not scale_up:  # only scale down, do not scale up (for better value mAP)
+    if not scale_up:  # only scale down, do not scale up (for better val mAP)
         r = min(r, 1.0)
 
     # Compute padding
@@ -168,24 +72,30 @@ def letter_box(img, new_shape=(640, 640), color=(.45, .45, .45), auto=True, scal
     return img
 
 
+def to_gui_size(tgt_width, img_wh):
+    gui_height = img_wh[1] / (img_wh[0] / tgt_width)
+    return (tgt_width, 1, gui_height)
+
+
 class ImgOnscreen(object):
     """
     Add a on screen image in the render 2d scene of Showbase
     """
 
-    def __init__(self, size, parent_np=None):
+    def __init__(self, size, pos=(0, 0, 0), parent_np=None):
         """
         :param size: (width, height)
         :param parent_np: Should be ShowBase or ExtraWindow
-        author: chenhao
         """
         self._size = size
         self.tx = Texture("video")
         self.tx.setup2dTexture(size[0], size[1], Texture.TUnsignedByte, Texture.FRgb8)
         # this makes some important setup call
-        # self.tx.load(PNMImage(card_size[0], card_size[1]))
+        self.tx.load(PNMImage(size[0], size[1]))
+        print((size[0] / 1920, size[1] / 1080 * size[0] / 1920))
         self.onscreen_image = OnscreenImage(self.tx,
-                                            pos=(0, 0, 0),
+                                            scale=(size[0] / 1920, 1, size[1] / 1080),
+                                            pos=pos,
                                             parent=parent_np.render2d)
 
     def update_img(self, img: np.ndarray):
@@ -197,7 +107,8 @@ class ImgOnscreen(object):
         if img.shape[2] == 1:
             img = img_to_n_channel(img)
         resized_img = letter_box(img, new_shape=[self._size[1], self._size[0]], auto=False)
-        self.tx.setRamImage(resized_img.tostring())
+        img_flip = cv2.flip(resized_img, 0)
+        self.tx.setRamImage(img_flip.tostring())
 
     def remove(self):
         """
@@ -207,8 +118,34 @@ class ImgOnscreen(object):
         if self.onscreen_image is not None:
             self.onscreen_image.destroy()
 
+    def show(self):
+        self.onscreen_image.show()
+
+    def hide(self):
+        self.onscreen_image.hide()
+
     def __del__(self):
         self.remove()
+
+
+class DrawText(OnscreenText):
+    def __init__(self, parent=None, scale=0.07, pos=(0, 0, 0), fg=(0, 0, 0, 1),
+                 bg=(0, 0, 0, 0.1)):
+        super().__init__(
+            parent=parent,
+            text='',
+            align=TextNode.ACenter,
+            pos=pos,
+            scale=scale,
+            # font=font,
+            fg=fg,
+            bg=bg,
+            mayChange=True,
+        )
+        self.start_time = None
+
+    def update_text(self, txt):
+        self['text'] = str(txt)
 
 
 class ExtraWindow(object):
@@ -234,16 +171,17 @@ class ExtraWindow(object):
         self.render2d = NodePath("extra_win_render2d")
         self.render2d.setDepthTest(0)
         self.render2d.setDepthWrite(0)
-        # setup window
+
         self.win = base.openWindow(props=WindowProperties(base.win.getProperties()),
                                    makeCamera=False,
                                    scene=self.render,
                                    requireWindow=True, )
+
         # set window background to white
         base.setBackgroundColor(r=1, g=1, b=1, win=self.win)
         # set window title and window's dimension
         self.set_win_props(title=window_title,
-                           size=(w, h))
+                           size=(w, h), )
         # set len for the camera and set the camera for the new window
         lens = PerspectiveLens()
         lens.setFov(fov)
@@ -263,12 +201,14 @@ class ExtraWindow(object):
         self._separation = 1
         self.filter = flt.Filter(self.win, self.cam)
         self.filter.setCartoonInk(separation=self._separation)
+
         # camera in camera 2d
         self.cam2d = base.makeCamera2d(self.win, )
         self.cam2d.reparentTo(self.render2d)
         # attach GPTop to the render2d to make sure the DirectGui can be used
         self.aspect2d = self.render2d.attachNewNode(PGTop("aspect2d"))
         # self.aspect2d.setScale(1.0 / aspect_ratio, 1.0, 1.0)
+
         # setup mouse for the new window
         # name of mouse watcher is to adapt to the name in the input manager
         self.mouse_thrower = base.setupMouse(self.win, fMultiWin=True)
@@ -276,12 +216,15 @@ class ExtraWindow(object):
         self.mouseWatcherNode = self.mouseWatcher.node()
         self.aspect2d.node().setMouseWatcher(self.mouseWatcherNode)
         # self.mouseWatcherNode.addRegion(PGMouseWatcherBackground())
+
         # setup input manager
-        self.inputmgr = im.InputManager(self, lookat_pos=lookat_pos)
+        self.inputmgr = im.InputManager(self, lookatpos=lookat_pos)
+
         # copy attributes and functions from base
         ## change the bound function to a function, and bind to `self` to become a unbound function
         self._interaction_update = functools.partial(base._interaction_update.__func__, self)
         self.p3dh = base.p3dh
+
         base.taskMgr.add(self._interaction_update, "interaction_extra_window", appendTask=True)
 
     @property
@@ -316,20 +259,22 @@ class ExtraWindow(object):
 
 
 if __name__ == "__main__":
+    import modeling.geometric_model as gm
+
     base = wd.World(cam_pos=[2, 0, 1.5], lookat_pos=[0, 0, .2])
-    gm.gen_frame(ax_length=.2).attach_to(base)
+    gm.gen_frame(length=.2).attach_to(base)
 
     # extra window 1
-    ew = ExtraWindow(base, cam_pos=np.array([2, 0, 1.5]), lookat_pos=np.array([0, 0, .2]))
-    ew.set_origin((np.array([0, 40])))
+    ew = ExtraWindow(base, cam_pos=[2, 0, 1.5], lookat_pos=[0, 0, .2])
+    ew.set_origin((0, 40))
     # ImgOnscreen()
     img = cv2.imread("img.png")
     on_screen_img = ImgOnscreen(img.shape[:2][::-1], parent_np=ew)
     on_screen_img.update_img(img)
 
     # extra window 2
-    ew2 = ExtraWindow(base, cam_pos=np.array([2, 0, 1.5]), lookat_pos=np.array([0, 0, .2]))
-    ew2.set_origin(np.array([0, ew.size[1]]))
-    gm.gen_frame(ax_length=.2).pdndp.reparentTo(ew2.render)
+    ew2 = ExtraWindow(base, cam_pos=[2, 0, 1.5], lookat_pos=[0, 0, .2])
+    ew2.set_origin((0, ew.size[1]))
+    gm.gen_frame(length=.2).objpdnp.reparentTo(ew2.render)
 
     base.run()

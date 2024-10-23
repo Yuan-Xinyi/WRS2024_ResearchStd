@@ -7,8 +7,8 @@ import wrs.robot_sim.manipulators.manipulator_interface as mi
 
 class CobottaArm(mi.ManipulatorInterface):
 
-    def __init__(self, pos=np.zeros(3), rotmat=np.eye(3), ik_solver='d', name="cobotta_arm", enable_cc=False):
-        super().__init__(pos=pos, rotmat=rotmat, home_conf=np.zeros(6), name=name, enable_cc=enable_cc)
+    def __init__(self, pos=np.zeros(3), rotmat=np.eye(3), ik_solver='d',home_conf=np.zeros(6), name="cobotta_arm", enable_cc=False):
+        super().__init__(pos=pos, rotmat=rotmat, home_conf=home_conf, name=name, enable_cc=enable_cc)
         current_file_dir = os.path.dirname(__file__)
         # anchor
         self.jlc.anchor.lnk_list[0].cmodel = mcm.CollisionModel(
