@@ -151,19 +151,7 @@ def train(model,train_loader,criterion,optimizer,epoch):
         if batch_idx % 100 == 0:
             print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}'
                   f' ({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
-# 训练和评估
-for epoch in range(1, 2):
-    print(f"Epoch {epoch}")
-    train(model, train_loader, criterion, optimizer, epoch)
-
-# file_path = 'dosing_volume/train_new_liquid_wight_2410/trained_model/'
-# if not os.path.exists(file_path):
-#     os.makedirs(file_path)
-
-# path = file_path+f'vim_1023.pth'
-# torch.save(model.state_dict(), path)
-torch.save(model.state_dict(), './vit_model.pth')
-
+            
 # Testing function
 def test(model, test_loader, criterion):
     model.eval()
@@ -180,6 +168,18 @@ def test(model, test_loader, criterion):
     print(f'\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)}'
           f' ({100. * correct / len(test_loader.dataset):.0f}%)\n')
 
+# 训练和评估
+for epoch in range(1, 9):
+    print(f"Epoch {epoch}")
+    train(model, train_loader, criterion, optimizer, epoch)
+    torch.save(model.state_dict(), f'./vit_model_epoch{epoch}.pth')
+    # Test the model
+    test(model, test_loader, criterion)
 
-# Test the model
-test(model, test_loader, criterion)
+
+# file_path = 'dosing_volume/train_new_liquid_wight_2410/trained_model/'
+# if not os.path.exists(file_path):
+#     os.makedirs(file_path)
+
+# path = file_path+f'vim_1023.pth'
+# torch.save(model.state_dict(), path)

@@ -76,9 +76,10 @@ transform = transforms.Compose([
 
 
 model = TransformerModel(input_dim=100, num_classes=10)
-model.load_state_dict(torch.load('/home/lqin/wrs_2024/dosing_volume/train_new_liquid_wight_2410/trained_model/vit_model.pth'))
+# model.load_state_dict(torch.load('/home/lqin/wrs_2024/dosing_volume/train_new_liquid_wight_2410/trained_model/vit_model_epoch1.pth'))
+model.load_state_dict(torch.load('/home/lqin/wrs_2024/vit_model_epoch8.pth'))
 model.eval()
-image_path='dosing_volume/train_new_liquid_wight_2410/balance/separate/num_0/2_sl_sl.jpg'
+image_path='dosing_volume/train_new_liquid_wight_2410/balance/separate/num_7/108_rc.jpg'
 image = Image.open(image_path)
 
 image_tensor = transform(image).unsqueeze(0)  # 添加 batch_size
