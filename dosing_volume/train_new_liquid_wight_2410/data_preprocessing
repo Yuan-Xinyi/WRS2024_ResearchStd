@@ -1,0 +1,87 @@
+import os
+import torch
+from torch.utils.data import Dataset, random_split
+from torchvision import transforms
+from PIL import Image
+import numpy as np
+
+class FillEdgesTransform:
+    def __call__(self, image):
+        img_array = np.array(image)
+        # Create a mask for black pixels
+        mask = (img_array == 0).all(axis=-1)  # Identify black pixels
+
+        # Get the color to fill (e.g., using the edge pixels)
+        if np.any(mask):
+            edge_color = img_array[~mask].mean(axis=0)  # Average color of non-black pixels
+            # Mix the edge color with white to make it lighter
+            lighter_color = edge_color * 0.93 + np.array([255, 255, 255]) * 0.07  # Adjust the ratio as needed
+            img_array[mask] = lighter_color  # Fill black pixels with the lighter color
+        
+        return Image.fromarray(img_array.astype(np.uint8))
+
+# Custom dataset class
+class DigitDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.img_labels = self._load_labels()
+
+    def _load_labels(self):
+        labels = []
+        # Iterate over each subfolder (digit folder) in the root directory
+        for label in range(10):  # Assuming folders are named num_0, num_1, num_2, ..., num_9
+            label_dir = os.path.join(self.root_dir, 'num_' + str(label))
+            if os.path.isdir(label_dir):
+                # Iterate over each image file in the subfolder
+                for img_file in os.listdir(label_dir):
+                    img_path = os.path.join(label_dir, img_file)
+                    # Only add file paths and corresponding labels (digits)
+                    if img_file.endswith(('.png', '.jpg', '.jpeg')):  # Filter for common image formats
+                        labels.append((img_path, label))  # Use folder name as label
+        return labels
+
+    def __len__(self):
+        return len(self.img_labels)
+
+    def __getitem__(self, idx):
+        img_path, label = self.img_labels[idx]
+        image = Image.open(img_path).convert("RGB")  # Read image and convert to RGB
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+
+def split_dataset(dataset, save_dir, train_ratio=0.7, val_ratio=0.15):
+    total_size = len(dataset)
+    train_size = int(train_ratio * total_size)
+    val_size = int(val_ratio * total_size)
+    test_size = total_size - train_size - val_size
+
+    # Randomly split the dataset into train, validation, and test sets
+    train_dataset, val_test_dataset = random_split(dataset, [train_size, total_size - train_size])
+    val_dataset, test_dataset = random_split(val_test_dataset, [val_size, test_size])
+
+    # Create directory to save the splits if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save the datasets
+    torch.save(train_dataset, os.path.join(save_dir, 'train_dataset.pt'))
+    torch.save(val_dataset, os.path.join(save_dir, 'val_dataset.pt'))
+    torch.save(test_dataset, os.path.join(save_dir, 'test_dataset.pt'))
+
+
+
+if __name__ == "__main__":
+    # Define the image transformation pipeline
+    transform = transforms.Compose([
+        transforms.Resize((200, 100)),  # Resize the image to a fixed size
+        transforms.RandomRotation(10),  # Rotate the image with expansion
+        FillEdgesTransform(),  # Fill edges to avoid black borders
+        transforms.Grayscale(num_output_channels=1),  # Convert to grayscale
+        transforms.ColorJitter(contrast=1.0),  # Enhance contrast
+        transforms.ToTensor(),  # Convert to tensor
+    ])
+
+    # Define training, validation, and test datasets
+    full_dataset = DigitDataset(root_dir='dosing_volume/train_new_liquid_wight_2410/balance/separate', transform=transform)
+    split_dataset(full_dataset, save_dir='dosing_volume/train_new_liquid_wight_2410/processed_dataset')

@@ -9,7 +9,13 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from einops import rearrange
+import torch.nn.functional as F
+from datetime import datetime
 
+TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
+rootpath = f'dosing_volume/train_new_liquid_wight_2410/results/vim_{TimeCode}/'
+os.makedirs(rootpath, exist_ok=True)
 
 class FillEdgesTransform:
     def __call__(self, image):
@@ -56,149 +62,121 @@ class DigitDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
+    
+class TransformerModel(nn.Module):
+    def __init__(self, input_dim, num_classes,n_heads=4,num_encoder_layers=3):
+        super(TransformerModel, self).__init__()
+        self.positional_encoding=nn.Parameter(torch.zeros(1, 200, 100))
+        encoder_layers=self.transformer=nn.TransformerEncoderLayer(d_model=100,nhead=n_heads)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_encoder_layers)
+        self.fc = nn.Linear(100, num_classes)
+        
+    def forward(self, x):
+        # batch_size is 16, image size is 28x28, here x is torch.Size([16, 1, 28, 28])
+        x = x.view(x.size(0), 200, 100)  # Reshape to torch.Size([16, 200, 100])
+        
+        # Add positional encoding
+        pos_enc = self.positional_encoding
+        x += pos_enc
+        
+        # Permute to (sequence_length, batch_size, embedding_dim) for transformer
+        x = x.permute(1, 0, 2)  # torch.Size([200, 16, 100])
+        
+        # Pass through transformer encoder
+        x = self.transformer_encoder(x)  # torch.Size([200, 16, 100])
+        
+        # Average over the sequence length dimension
+        x = x.mean(dim=0)  # torch.Size([16, 100])
+        
+        # Pass through fully connected layer
+        x = self.fc(x)  # torch.Size([16, 10]) [batch_size, num_classes]
+        
+        return x
 
-def split_dataset(dataset, train_ratio=0.7, val_ratio=0.15):
-    total_size = len(dataset)
-    train_size = int(train_ratio * total_size)
-    val_size = int(val_ratio * total_size)
-    test_size = total_size - train_size - val_size
-
-    # Randomly split the dataset into train, validation, and test sets
-    train_dataset, val_test_dataset = random_split(dataset, [train_size, total_size - train_size])
-    val_dataset, test_dataset = random_split(val_test_dataset, [val_size, test_size])
+def load_and_create_dataloaders(data_dir, batch_size):
+    # Load the datasets
+    train_dataset = torch.load(os.path.join(data_dir, 'train_dataset.pt'))
+    val_dataset = torch.load(os.path.join(data_dir, 'val_dataset.pt'))
+    test_dataset = torch.load(os.path.join(data_dir, 'test_dataset.pt'))
 
     # Create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
 
-
-transform = transforms.Compose([
-    transforms.Resize((200, 100)),  # Resize the image to a fixed size
-    transforms.RandomRotation(10),  # Rotate the image with expansion
-    FillEdgesTransform(),  # Fill edges to avoid black borders
-    transforms.Grayscale(num_output_channels=1),  # Convert to grayscale
-    transforms.ColorJitter(contrast=1.0),  # Enhance contrast
-    transforms.ToTensor(),  # Convert to tensor
-])
-
-'''test the imagae augmentation'''
-# image_path = 'dosing_volume/train_new_liquid_wight_2410/balance/separate/num_0/1.jpg'
-# image = Image.open(image_path)
-
-# transformed_image = transform(image)
-# transformed_image_np = transformed_image.numpy().squeeze()
-
-# fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-# ax[0].imshow(image)
-# ax[0].set_title('原始图像')
-# ax[0].axis('off')
-
-# ax[1].imshow(transformed_image_np, cmap='gray')
-# ax[1].set_title('变换后的图像')
-# ax[1].axis('off')
-
-# plt.show()
-
-
-
-# Define training, validation, and test datasets
-full_dataset = DigitDataset(root_dir='dosing_volume/train_new_liquid_wight_2410/balance/separate', transform=transform)
-train_loader, val_loader, test_loader = split_dataset(full_dataset)
-
-# Check dataset sizes
-print(f"Train dataset size: {len(train_loader.dataset)}")
-print(f"Validation dataset size: {len(val_loader.dataset)}")
-print(f"Test dataset size: {len(test_loader.dataset)}")
-
-# Define Vision Transformer model
-class VisionTransformer(nn.Module):
-    def __init__(self, num_classes, embed_dim=128, num_heads=4, num_layers=6):
-        super(VisionTransformer, self).__init__()
-        self.patch_size = 10
-        self.img_size = (200, 100)
-        self.num_patches = (self.img_size[0] // self.patch_size) * (self.img_size[1] // self.patch_size)
-
-        # Patch embedding
-        self.patch_embeddings = nn.Conv2d(1, embed_dim, kernel_size=self.patch_size, stride=self.patch_size)
-
-        # Transformer Encoder
-        self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads),
-            num_layers=num_layers
-        )
-
-        # Classification head
-        self.fc = nn.Linear(embed_dim, num_classes)
-
-    def forward(self, x):
-        # Patch embedding
-        x = self.patch_embeddings(x)  # [B, embed_dim, num_patches]
-        x = x.flatten(2)  # Flatten to [B, embed_dim, num_patches]
-        x = x.permute(0, 2, 1)  # Change to [B, num_patches, embed_dim]
-
-        # Transformer encoding
-        x = self.transformer_encoder(x)
-
-        # Classifier
-        x = x.mean(dim=1)  # Pooling
-        x = self.fc(x)  # [B, num_classes]
-        return x
-
-# Instantiate model, loss function, and optimizer
-model = VisionTransformer(num_classes=10)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
 # Training and validation function
-def train_and_validate(model, train_loader, val_loader, criterion, optimizer, num_epochs=10):
-    for epoch in range(num_epochs):
-        # Training phase
-        model.train()
-        running_loss = 0.0
-        # for images, labels in enumerate(train_loader):
-        for images, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch"):
-            # print(1)
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-
-        # Validation phase
-        model.eval()
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            for images, labels in val_loader:
-                outputs = model(images)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-        accuracy = 100 * correct / total
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}, Validation Accuracy: {accuracy:.2f}%")
-
+def train(model,train_loader,criterion,optimizer,epoch):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        optimizer.zero_grad()
+        output = model(data)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % 100 == 0:
+            print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}'
+                f' ({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
+            
 # Testing function
-def test_model(model, test_loader):
+def test(model, test_loader, criterion):
     model.eval()
-    total = 0
+    test_loss = 0
     correct = 0
     with torch.no_grad():
-        for images, labels in test_loader:
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+        for data, target in test_loader:
+            output = model(data)
+            test_loss += criterion(output, target).item()  # sum up batch loss
+            pred = output.argmax(dim=1, keepdim=True)  
+            correct += pred.eq(target.view_as(pred)).sum().item()
 
-    accuracy = 100 * correct / total
-    print(f"Test Accuracy: {accuracy:.2f}%")
+    test_loss /= len(test_loader.dataset)
+    print(f'\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)}'
+        f' ({100. * correct / len(test_loader.dataset):.0f}%)\n')
 
-# Train and validate the model
-train_and_validate(model, train_loader, val_loader, criterion, optimizer, num_epochs=10)
+if __name__ == "__main__":
+    # Define the image transformation pipeline
+    transform = transforms.Compose([
+        transforms.Resize((200, 100)),  # Resize the image to a fixed size
+        transforms.RandomRotation(10),  # Rotate the image with expansion
+        FillEdgesTransform(),  # Fill edges to avoid black borders
+        transforms.Grayscale(num_output_channels=1),  # Convert to grayscale
+        transforms.ColorJitter(contrast=1.0),  # Enhance contrast
+        transforms.ToTensor(),  # Convert to tensor
+    ])
 
-# Test the model
-test_model(model, test_loader)
+    '''test the imagae augmentation'''
+    # image_path = 'dosing_volume/train_new_liquid_wight_2410/balance/separate/num_0/1.jpg'
+    # image = Image.open(image_path)
+
+    # transformed_image = transform(image)
+    # transformed_image_np = transformed_image.numpy().squeeze()
+
+    # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    # ax[0].imshow(image)
+    # ax[0].set_title('original image')
+    # ax[0].axis('off')
+    # ax[1].imshow(transformed_image_np, cmap='gray')
+    # ax[1].set_title('image after transformation')
+    # ax[1].axis('off')
+    # plt.show()
+
+
+    # import training, validation, and test datasets
+    train_loader, val_loader, test_loader = load_and_create_dataloaders(data_dir='dosing_volume/train_new_liquid_wight_2410/processed_dataset', batch_size=16)
+    print(f"Dataset sizes - Train: {len(train_loader.dataset)}, Validation: {len(val_loader.dataset)}, Test: {len(test_loader.dataset)}")
+
+    model = TransformerModel(input_dim=100, num_classes=10)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)   
+
+
+    # training loop and evaluation
+    for epoch in range(1, 9):
+        print(f"Epoch {epoch}")
+        train(model, train_loader, criterion, optimizer, epoch)
+        torch.save(model.state_dict(), os.path.join(rootpath, f'epoch{epoch}.pth'))
+        
+        # Test the model
+        test(model, test_loader, criterion)
