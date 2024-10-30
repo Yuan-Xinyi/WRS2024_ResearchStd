@@ -26,17 +26,17 @@ class TipsDataset(Dataset):
         """Return data and label based on index."""
         img_path = self.file_list[idx]
         img = Image.open(img_path)
-        img_trans = self.transform(img)
-        label = int(img_path.split("\\")[-1].split(".")[0])  # Extract the filename as the label
+        img_trans = self.transform(img)  # (3,120,120)
+        label = int(img_path.split("/")[-1].split(".")[0])  # Extract the filename as the label
         
         batch = Batch(img_trans, label)
         return batch
 
-def load_data(dataset_dir_RIKEN, seed, test_size=0.2):
+def load_data(dataset_dir, seed, test_size=0.2):
     """
     Load the dataset, split it into training and validation sets, and return the data loaders.
     """
-    dataset_list = glob.glob(os.path.join(dataset_dir_RIKEN, '*/*.jpg'))
+    dataset_list = glob.glob(os.path.join(dataset_dir, '*/*.jpg'))
 
     labels = [path.split("/")[-1].split(".")[0] for path in dataset_list]
 
