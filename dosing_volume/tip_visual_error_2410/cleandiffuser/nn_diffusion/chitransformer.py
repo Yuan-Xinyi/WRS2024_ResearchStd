@@ -130,10 +130,11 @@ class ChiTransformer(BaseNNDiffusion):
             y:          (b, Ta, act_dim)
         """
 
-        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model)
+        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model) (64,1,256)
 
-        act_emb = self.act_emb(x)
-        obs_emb = self.obs_emb(condition)
+        act_emb = self.act_emb(x) # (64,1,256)
+        obs_emb = self.obs_emb(condition).unsqueeze(1)  # (64,1,256)
+
 
         cond_emb = torch.cat([t_emb, obs_emb], dim=1)  # (b, 1+To, d_model)
         cond_pos_emb = self.cond_pos_emb[:, :cond_emb.shape[1], :]
@@ -145,6 +146,6 @@ class ChiTransformer(BaseNNDiffusion):
         x = self.decoder(tgt=x, memory=memory, tgt_mask=self.mask, memory_mask=self.memory_mask)
 
         x = self.ln_f(x)
-        x = self.head(x)
+        x = self.head(x)  # (b, Ta, act_dim)
 
         return x

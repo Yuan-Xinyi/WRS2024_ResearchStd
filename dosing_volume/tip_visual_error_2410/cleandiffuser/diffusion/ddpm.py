@@ -86,7 +86,7 @@ class DDPM(DiffusionModel):
         return xt, t, eps
 
     def loss(self, x0, condition=None):
-        xt, t, eps = self.add_noise(x0)
+        xt, t, eps = self.add_noise(x0) # (64,1,1)
         condition = self.model["condition"](condition) if condition is not None else None
         if self.predict_noise:
             loss = (self.model["diffusion"](xt, t, condition) - eps) ** 2
