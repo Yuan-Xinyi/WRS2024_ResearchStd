@@ -19,3 +19,7 @@ def device_check():
 
 def normalize_label(label, num_classes=64):
     return (label - 1) / (num_classes - 1)
+
+def unnormalize_label(normalized_label, num_classes=64):
+    return normalized_label * (num_classes - 1) + 1
+

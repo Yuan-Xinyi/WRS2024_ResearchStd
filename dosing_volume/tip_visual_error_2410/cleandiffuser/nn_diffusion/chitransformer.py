@@ -132,8 +132,8 @@ class ChiTransformer(BaseNNDiffusion):
 
         t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model) (64,1,256)
 
-        act_emb = self.act_emb(x) # (64,1,256)
-        obs_emb = self.obs_emb(condition).unsqueeze(1)  # (64,1,256)
+        act_emb = self.act_emb(x) # (batch,1,1) --> (batch,1,256)
+        obs_emb = self.obs_emb(condition).unsqueeze(1)  # (batch,512) --> (batch,1,256)
 
 
         cond_emb = torch.cat([t_emb, obs_emb], dim=1)  # (b, 1+To, d_model)

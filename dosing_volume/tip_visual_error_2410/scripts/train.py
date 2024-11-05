@@ -7,7 +7,7 @@ sys.path.append(project_root)
 
 from torch.utils.data import DataLoader
 import utils.arrays as arrays
-from utils.utils import seed_everything, device_check, normalize_label
+from utils.utils import seed_everything, device_check, normalize_label, unnormalize_label
 from utils.dataset import TipsDataset, load_data
 from utils.resnet_helper import get_resnet, replace_bn_with_gn
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -15,6 +15,10 @@ import torch
 from tqdm import tqdm
 import wandb
 import time
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 
 '''cleandiffuser imports'''
 from datetime import datetime
@@ -31,7 +35,6 @@ seed = 0
 seed_everything(1)
 # dataset_dir_RIKEN = "dosing_volume/tip_visual_error_2410/data/RIKEN_yokohama_tip_D405/img_2/"
 dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
-wandb.init(project="tip_visual")
 
 # diffuser parameters
 solver = 'ddpm'
@@ -46,7 +49,7 @@ obs_steps = 1
 action_steps = 1
 
 # Training
-mode = 'train'
+mode = 'inference'  # ['train', 'inference']
 device = 'cuda'
 diffusion_gradient_steps = 10000
 batch_size = 16
@@ -70,6 +73,14 @@ shape_meta = {
 rgb_model = 'resnet50'
 use_group_norm = True
 
+# inference parameters
+sampling_steps = 10
+w_cg = 0.0001
+temperature = 0.5
+use_ema = True
+
+
+
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
@@ -85,7 +96,7 @@ if __name__ == '__main__':
 
     # Create data loaders
     train_loader = DataLoader(dataset = train_data, batch_size = batch_size, shuffle = True)
-    test_loader = DataLoader(dataset = test_data, batch_size = batch_size, shuffle = True)
+    test_loader = DataLoader(dataset = test_data, batch_size = 1, shuffle = False)
 
     # # construct ResNet18 encoder
     # # important: if you have multiple camera views, use seperate encoder weights for each view.
@@ -128,6 +139,7 @@ if __name__ == '__main__':
     diffusion_lr_scheduler = CosineAnnealingLR(agent.optimizer, diffusion_gradient_steps)
 
     if mode == 'train':
+        wandb.init(project="tip_visual")
         # ---------------------- Training ----------------------
         # agent.train()
         n_gradient_step = 0
@@ -166,7 +178,56 @@ if __name__ == '__main__':
                 n_gradient_step += 1
                 if n_gradient_step >= diffusion_gradient_steps:
                     break
+        wandb.finish()
     
-    wandb.finish()
+    elif mode == 'inference':
+        # ---------------------- Testing ----------------------
+        save_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1105_1556_transformer/diffusion_ckpt_latest.pt'
+        agent.load(save_path)
+        agent.eval()
+        inference_losses = []
+        prior = torch.zeros((1, horizon, action_dim), device=device)
+
+        with torch.no_grad():
+            for batch in tqdm(test_loader, desc="Evaluating on Test Set"):
+                nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
+                condition = {'image': nobs}
+                # resnet_condition = agent.model["condition"](condition)  # (1,512)
+                # trajectory, log = agent.sample(prior,
+                #                                 solver=solver,
+                #                                 n_samples = 1,
+                #                                 sample_steps=sampling_steps,
+                #                                 use_ema=use_ema, w_cg=w_cg, temperature=temperature)
+                
+                naction, _ = agent.sample(prior=prior, n_samples=1, 
+                                          sample_steps=sampling_steps, solver=solver, 
+                                          condition_cfg=condition, w_cfg=w_cg, use_ema=use_ema)   # (env_num, 64, 12)
+                
+                pred_label = unnormalize_label(naction, num_classes=64) 
+                # loss = F.mse_loss(pred_label, gth_label)
+                loss = F.l1_loss(pred_label.squeeze(), gth_label)
+                inference_losses.append(loss.item())
+        loss_differences = np.array(inference_losses)
+        avg_loss = np.mean(loss_differences)
+        median_loss = np.median(loss_differences)
+        print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
+
+        sns.kdeplot(loss_differences, color='b', label="KDE Curve")
+
+        plt.title("Probability Distribution of MSE Loss Differences")
+        plt.xlabel("MSE Loss Difference")
+        plt.ylabel("Density")
+        plt.legend()
+        plt.grid()
+        plt.savefig("loss_distribution.png")
+        plt.show()
+                   
+    
+    else:
+        raise ValueError(f"Invalid mode: {mode}")
+    
 
     
