@@ -1,0 +1,5 @@
+{
+    "chat.commandCenter.enabled": true,
+    "window.experimentalControlOverlay": true,
+    "workbench.colorTheme": "Default Dark Modern"
+}

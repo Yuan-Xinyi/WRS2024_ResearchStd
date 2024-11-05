@@ -40,7 +40,7 @@ def load_data(dataset_dir, seed, test_size=0.2):
 
     labels = [path.split("/")[-1].split(".")[0] for path in dataset_list]
 
-    train_list, valid_list = train_test_split(
+    train_list, test_list = train_test_split(
                 dataset_list, test_size=test_size, stratify=labels, random_state=seed)
 
-    return train_list, valid_list
+    return train_list, test_list

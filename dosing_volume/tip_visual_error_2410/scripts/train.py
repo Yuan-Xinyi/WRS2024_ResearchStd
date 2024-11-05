@@ -28,15 +28,16 @@ from cleandiffuser.diffusion.ddpm import DDPM
 '''preparations'''
 device_check()
 seed = 0
-seed_everything(0)
+seed_everything(1)
 # dataset_dir_RIKEN = "dosing_volume/tip_visual_error_2410/data/RIKEN_yokohama_tip_D405/img_2/"
 dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
+wandb.init(project="tip_visual")
 
 # diffuser parameters
 solver = 'ddpm'
 model_dim = 32
 diffusion_steps = 20
-predict_noise = False
+predict_noise = True
 action_loss_weight = 10.0
 ema_rate = 0.9999
 noise_level = 0.0
@@ -47,14 +48,13 @@ action_steps = 1
 # Training
 mode = 'train'
 device = 'cuda'
-n_train_steps = 5000
-diffusion_gradient_steps = 20000
-batch_size = 64
-log_interval = 100
-save_interval = 1000
-sample_steps = 20
+diffusion_gradient_steps = 1000
+batch_size = 16
+log_interval = 10
+save_interval = 10
+sample_steps = 10
 lr = 0.0001
-epochs = 100
+num_epochs = 10
 
 action_dim = 1
 horizon = 1
@@ -75,17 +75,17 @@ if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
     rootpath = f'{TimeCode}_transformer'
-    save_path = f'results/diffuser/{rootpath}/'
+    save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
 
-    train_list, valid_list = load_data(dataset_dir, seed)
+    train_list, test_list = load_data(dataset_dir, seed)
     train_data = TipsDataset(train_list)
-    valid_data = TipsDataset(valid_list)
+    test_data = TipsDataset(test_list)
 
     # Create data loaders
     train_loader = DataLoader(dataset = train_data, batch_size = batch_size, shuffle = True)
-    valid_loader = DataLoader(dataset = valid_data, batch_size = batch_size, shuffle = True)
+    test_loader = DataLoader(dataset = test_data, batch_size = batch_size, shuffle = True)
 
     # # construct ResNet18 encoder
     # # important: if you have multiple camera views, use seperate encoder weights for each view.
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     agent = DDPM(
         nn_diffusion=nn_diffusion, nn_condition=nn_condition, device=device,
         diffusion_steps=sample_steps, x_max=x_max, x_min=x_min,
-        optim_params={"lr": lr})
+        predict_noise=predict_noise, optim_params={"lr": lr})
     diffusion_lr_scheduler = CosineAnnealingLR(agent.optimizer, diffusion_gradient_steps)
 
     if mode == 'train':
@@ -134,35 +134,38 @@ if __name__ == '__main__':
         log = {'avg_loss_diffusion': 0.}
         start_time = time.time()
 
-        for batch in tqdm(train_loader):
-            nobs, naction = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
-            naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (64,1,1)
-            condition = {'image': nobs}
+        for epoch in tqdm(range(num_epochs)):
+            for batch in train_loader:
+                nobs, naction = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
+                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (64,1,1)
+                condition = {'image': nobs}
 
-            # ----------- Gradient Step ------------
-            diffusion_loss = agent.update(naction, condition)['loss']
-            log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
-            # print(f'[t={n_gradient_step + 1}] diffusion loss = {current_loss}')
-            diffusion_lr_scheduler.step()
+                # ----------- Gradient Step ------------
+                diffusion_loss = agent.update(naction, condition)['loss']
+                log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
+                # print(f'[t={n_gradient_step + 1}] diffusion loss = {current_loss}')
+                diffusion_lr_scheduler.step()
 
-            # ----------- Logging ------------
-            if (n_gradient_step + 1) % log_interval == 0:
-                log['gradient_steps'] = n_gradient_step + 1
-                log["avg_loss_diffusion"] /= log_interval
-                wandb.log(
-                    {'step': log['gradient_steps'],
-                     'avg_training_loss': log['avg_loss_diffusion'],
-                     'total_time': time.time() - start_time}, commit = True)
-                print(log)
-                log = {"avg_loss_diffusion": 0.}
+                # ----------- Logging ------------
+                if (n_gradient_step + 1) % log_interval == 0:
+                    log['gradient_steps'] = n_gradient_step + 1
+                    log["avg_loss_diffusion"] /= log_interval
+                    wandb.log(
+                        {'step': log['gradient_steps'],
+                        'avg_training_loss': log['avg_loss_diffusion'],
+                        'total_time': time.time() - start_time}, commit = True)
+                    print(log)
+                    log = {"avg_loss_diffusion": 0.}
 
-            # ----------- Saving ------------
-            if (n_gradient_step + 1) % save_interval == 0:
-                agent.save(save_path + f"diffusion_ckpt_{n_gradient_step + 1}.pt")
-                agent.save(save_path + f"diffusion_ckpt_latest.pt")
+                # ----------- Saving ------------
+                if (n_gradient_step + 1) % save_interval == 0:
+                    agent.save(save_path + f"diffusion_ckpt_{n_gradient_step + 1}.pt")
+                    agent.save(save_path + f"diffusion_ckpt_latest.pt")
 
-            n_gradient_step += 1
-            if n_gradient_step >= diffusion_gradient_steps:
-                break
+                n_gradient_step += 1
+                if n_gradient_step >= diffusion_gradient_steps:
+                    break
+    
+    wandb.finish()
 
     
