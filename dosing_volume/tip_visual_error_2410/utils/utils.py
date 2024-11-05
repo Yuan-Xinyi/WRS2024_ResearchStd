@@ -16,3 +16,6 @@ def seed_everything(seed):
 def device_check():
     print(torch.__version__)
     print(torch.cuda.is_available())
+
+def normalize_label(label, num_classes=64):
+    return (label - 1) / (num_classes - 1)

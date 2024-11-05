@@ -7,7 +7,7 @@ sys.path.append(project_root)
 
 from torch.utils.data import DataLoader
 import utils.arrays as arrays
-from utils.utils import seed_everything, device_check
+from utils.utils import seed_everything, device_check, normalize_label
 from utils.dataset import TipsDataset, load_data
 from utils.resnet_helper import get_resnet, replace_bn_with_gn
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -37,7 +37,7 @@ wandb.init(project="tip_visual")
 solver = 'ddpm'
 model_dim = 32
 diffusion_steps = 20
-predict_noise = True
+predict_noise = False
 action_loss_weight = 10.0
 ema_rate = 0.9999
 noise_level = 0.0
@@ -48,13 +48,13 @@ action_steps = 1
 # Training
 mode = 'train'
 device = 'cuda'
-diffusion_gradient_steps = 1000
+diffusion_gradient_steps = 10000
 batch_size = 16
-log_interval = 10
-save_interval = 10
-sample_steps = 10
+log_interval = 100
+save_interval = 1000
+sample_steps = 100
 lr = 0.0001
-num_epochs = 10
+num_epochs = 1000
 
 action_dim = 1
 horizon = 1
@@ -67,7 +67,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet18'
+rgb_model = 'resnet50'
 use_group_norm = True
 
 
@@ -136,8 +136,9 @@ if __name__ == '__main__':
 
         for epoch in tqdm(range(num_epochs)):
             for batch in train_loader:
-                nobs, naction = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
-                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (64,1,1)
+                nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
+                naction = normalize_label(action, num_classes=64)  # (batch_size, 1)
+                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
                 condition = {'image': nobs}
 
                 # ----------- Gradient Step ------------

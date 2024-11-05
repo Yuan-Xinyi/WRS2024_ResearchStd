@@ -31,6 +31,7 @@ class TipsDataset(Dataset):
         
         batch = Batch(img_trans, label)
         return batch
+    
 
 def load_data(dataset_dir, seed, test_size=0.2):
     """
