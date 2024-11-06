@@ -24,27 +24,88 @@ def unnormalize_label(normalized_label, num_classes=64):
     return normalized_label * (num_classes - 1) + 1
 
 
-# seed_everything(1)
-# action_label = 39
-# action = normalize_label(action_label)
-# print('the normalized a:', action)
-# print('the unnormalized a:', unnormalize_label(action))
+
+# def uniform_normalize_label(label, num_classes=60):
+#     range_size = 1.0 / num_classes
+#     lower_bound = (label - 1) * range_size
+
+#     return lower_bound + random.uniform(0, range_size)
 
 
-def uniform_normalize_label(label, num_classes=60):
-    range_size = 1.0 / num_classes
-    lower_bound = (label - 1) * range_size
+# def uniform_unnormalize_label(normalized_label, num_classes=60):
+#     range_size = 1.0 / num_classes
+
+#     return int(normalized_label // range_size) + 1
+
+import random
+
+import random
+
+def uniform_normalize_label(label, num_classes=60, scale=10):
+    """
+    Normalize the label to the range (-scale, scale) using uniform distribution.
+    Args:
+        label (int): The input label in the range [1, num_classes].
+        num_classes (int): The total number of classes (default is 60).
+        scale (float): The desired range for normalization (default is 10).
+    Returns:
+        float: The normalized label in the range (-scale, scale).
+    """
+    range_size = 2.0 * scale / num_classes  # Scale to the range (-scale, scale)
+    lower_bound = (label - 1) * range_size - scale  # Normalized value in the range (-scale, scale)
 
     return lower_bound + random.uniform(0, range_size)
 
 
-def uniform_unnormalize_label(normalized_label, num_classes=60):
-    range_size = 1.0 / num_classes
+def uniform_unnormalize_label(normalized_label, num_classes=60, scale=10):
+    """
+    Unnormalize the normalized label back to the original label in the range [1, num_classes].
+    Args:
+        normalized_label (float): The normalized label in the range (-scale, scale).
+        num_classes (int): The total number of classes (default is 60).
+        scale (float): The desired range for unnormalization (default is 10).
+    Returns:
+        int: The unnormalized label in the range [1, num_classes].
+    """
+    range_size = 2.0 * scale / num_classes  # Scale to the range (-scale, scale)
 
-    return int(normalized_label // range_size) + 1
+    # Map the normalized label back to [0, num_classes-1], then to the original label range
+    original_label = (normalized_label + scale) // range_size + 1
+    return int(original_label)
 
-seed_everything(1)
-action_label = 39
-action = normalize_label(action_label)
-print('The normalized action:', action)
-print('The unnormalized action:', unnormalize_label(action))
+
+
+def MinMaxNormalize(X):
+    """
+    Normalize the input data X to the range [-1, 1] using min-max scaling.
+    Args:
+        X (np.ndarray): Input data (2D array or higher).
+    Returns:
+        np.ndarray: Normalized data in the range [-1, 1].
+    """
+    X = X.reshape(-1, X.shape[-1]).astype(np.float32)
+    min_vals = np.min(X, axis=0)
+    max_vals = np.max(X, axis=0)
+    range_vals = max_vals - min_vals
+    range_vals[range_vals == 0] = 1  # Avoid division by zero, if min == max for a feature.
+    normalized_data = (X - min_vals) / range_vals  # Normalize to [0, 1]
+    normalized_data = normalized_data * 2 - 1  # Scale to [-1, 1]
+    
+    return normalized_data, min_vals, range_vals
+
+
+def unMinMaxNormalize(X, min_vals, range_vals):
+    """
+    Reverse the normalization and return the original data.
+    Args:
+        X (np.ndarray): Normalized data (values in the range [-1, 1]).
+        min_vals (np.ndarray): The minimum values of the original data.
+        range_vals (np.ndarray): The range (max - min) of the original data.
+    Returns:
+        np.ndarray: The unnormalized data in its original range.
+    """
+    X = X.astype(np.float32)
+    X = (X + 1) / 2  # Reverse scaling from [-1, 1] to [0, 1]
+    unnormalized_data = X * range_vals + min_vals  # Reverse min-max scaling
+    
+    return unnormalized_data

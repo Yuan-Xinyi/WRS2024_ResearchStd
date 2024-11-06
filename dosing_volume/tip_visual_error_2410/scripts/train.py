@@ -7,7 +7,7 @@ sys.path.append(project_root)
 
 from torch.utils.data import DataLoader
 import utils.arrays as arrays
-from utils.utils import seed_everything, device_check, normalize_label, unnormalize_label
+from utils.utils import seed_everything, device_check, uniform_normalize_label, uniform_unnormalize_label
 from utils.dataset import TipsDataset, load_data
 from utils.resnet_helper import get_resnet, replace_bn_with_gn
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -38,16 +38,12 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 solver = 'ddpm'
-model_dim = 32
 diffusion_steps = 20
-predict_noise = False
-action_loss_weight = 10.0
-ema_rate = 0.9999
-noise_level = 0.0
-normalizer = 'GaussianNormalizer'  # [CustomizedNormalizer, GaussianNormalizer, SafeLimitsNormalizer]
+predict_noise = False # [True, False]
 obs_steps = 1
 action_steps = 1
 num_classes = 60
+action_scale = 10.0
 
 # Training
 mode = 'train'  # ['train', 'inference', 'case_inference']
@@ -56,8 +52,8 @@ diffusion_gradient_steps = 10000
 batch_size = 16
 log_interval = 100
 save_interval = 1000
-lr = 0.0001
-num_epochs = 1000
+lr = 0.001
+num_epochs = 1
 
 action_dim = 1
 horizon = 1
@@ -129,8 +125,8 @@ if __name__ == '__main__':
 
     # --------------- Diffusion Model --------------------
     '''x max and x min'''
-    x_max = torch.ones((1, horizon, action_dim), device=device) * +60.0  # （1，1，1）
-    x_min = torch.zeros((1, horizon, action_dim), device=device)
+    x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
+    x_min = torch.zeros((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
 
     agent = DDPM(
         nn_diffusion=nn_diffusion, nn_condition=nn_condition, device=device,
@@ -151,10 +147,10 @@ if __name__ == '__main__':
                 nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
                 
                 '''normalize the label'''
-                # naction = normalize_label(action, num_classes=num_classes)  # (batch_size, 1)
-                # naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)  # (batch_size, 1)
+                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
                 '''don't need to normalize the label'''
-                naction = action.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                # naction = action.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
                 
                 condition = {'image': nobs}
 
@@ -187,25 +183,25 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/results/diffuser/1106_1617_train/diffusion_ckpt_latest.pt'
+        load_path = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/results/diffuser/1106_1750_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         inference_losses = []
         prior = torch.zeros((1, horizon, action_dim), device=device)
 
         with torch.no_grad():
-            for batch in tqdm(test_loader, desc="Evaluating on Test Set"):
+            for batch in test_loader:
                 nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                 condition = {'image': nobs}
                 
                 naction, _ = agent.sample(prior=prior, n_samples=1, 
                                           sample_steps=sampling_steps, solver=solver, 
                                           condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
-                pred_label = naction.squeeze()
-                # pred_label = unnormalize_label(naction, num_classes=num_classes) 
-                # loss = F.mse_loss(pred_label, gth_label)
-                loss = F.l1_loss(pred_label.squeeze(), gth_label)
-                print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
+                print('current action is:', naction)
+                pred_label = uniform_unnormalize_label(naction, num_classes=num_classes, scale=action_scale) 
+                loss = F.mse_loss(torch.tensor(pred_label).to(device='cuda'), gth_label)
+
+                # print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
                 inference_losses.append(loss.item())
         
         loss_differences = np.array(inference_losses)
