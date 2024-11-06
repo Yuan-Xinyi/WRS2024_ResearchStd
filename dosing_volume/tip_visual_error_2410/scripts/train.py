@@ -50,13 +50,12 @@ action_steps = 1
 num_classes = 60
 
 # Training
-mode = 'inference'  # ['train', 'inference', 'case_inference']
+mode = 'train'  # ['train', 'inference', 'case_inference']
 device = 'cuda'
 diffusion_gradient_steps = 10000
 batch_size = 16
 log_interval = 100
 save_interval = 1000
-sample_steps = 100
 lr = 0.0001
 num_epochs = 1000
 
@@ -130,12 +129,12 @@ if __name__ == '__main__':
 
     # --------------- Diffusion Model --------------------
     '''x max and x min'''
-    x_max = torch.ones((1, horizon, action_dim), device=device) * +10.0  # （1，1，1）
-    x_min = torch.ones((1, horizon, action_dim), device=device) * -10.0
+    x_max = torch.ones((1, horizon, action_dim), device=device) * +60.0  # （1，1，1）
+    x_min = torch.zeros((1, horizon, action_dim), device=device)
 
     agent = DDPM(
         nn_diffusion=nn_diffusion, nn_condition=nn_condition, device=device,
-        diffusion_steps=sample_steps, x_max=x_max, x_min=x_min,
+        diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
         predict_noise=predict_noise, optim_params={"lr": lr})
     diffusion_lr_scheduler = CosineAnnealingLR(agent.optimizer, diffusion_gradient_steps)
 
@@ -150,8 +149,13 @@ if __name__ == '__main__':
         for epoch in tqdm(range(num_epochs)):
             for batch in train_loader:
                 nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
-                naction = normalize_label(action, num_classes=num_classes)  # (batch_size, 1)
-                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                
+                '''normalize the label'''
+                # naction = normalize_label(action, num_classes=num_classes)  # (batch_size, 1)
+                # naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                '''don't need to normalize the label'''
+                naction = action.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                
                 condition = {'image': nobs}
 
                 # ----------- Gradient Step ------------
@@ -183,7 +187,7 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1106_1420_transformer/diffusion_ckpt_5000.pt'
+        load_path = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/results/diffuser/1106_1617_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         inference_losses = []
@@ -196,9 +200,9 @@ if __name__ == '__main__':
                 
                 naction, _ = agent.sample(prior=prior, n_samples=1, 
                                           sample_steps=sampling_steps, solver=solver, 
-                                          condition_cfg=condition, w_cfg=w_cg, use_ema=use_ema)   # (env_num, 64, 12)
-                
-                pred_label = unnormalize_label(naction, num_classes=num_classes) 
+                                          condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
+                pred_label = naction.squeeze()
+                # pred_label = unnormalize_label(naction, num_classes=num_classes) 
                 # loss = F.mse_loss(pred_label, gth_label)
                 loss = F.l1_loss(pred_label.squeeze(), gth_label)
                 print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
