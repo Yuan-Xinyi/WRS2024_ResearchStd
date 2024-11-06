@@ -47,9 +47,10 @@ noise_level = 0.0
 normalizer = 'GaussianNormalizer'  # [CustomizedNormalizer, GaussianNormalizer, SafeLimitsNormalizer]
 obs_steps = 1
 action_steps = 1
+num_classes = 60
 
 # Training
-mode = 'inference'  # ['train', 'inference']
+mode = 'inference'  # ['train', 'inference', 'case_inference']
 device = 'cuda'
 diffusion_gradient_steps = 10000
 batch_size = 16
@@ -85,7 +86,7 @@ use_ema = True
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
-    rootpath = f'{TimeCode}_transformer'
+    rootpath = f'{TimeCode}_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
@@ -149,7 +150,7 @@ if __name__ == '__main__':
         for epoch in tqdm(range(num_epochs)):
             for batch in train_loader:
                 nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
-                naction = normalize_label(action, num_classes=64)  # (batch_size, 1)
+                naction = normalize_label(action, num_classes=num_classes)  # (batch_size, 1)
                 naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
                 condition = {'image': nobs}
 
@@ -182,8 +183,8 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        save_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1105_1556_transformer/diffusion_ckpt_latest.pt'
-        agent.load(save_path)
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1106_1420_transformer/diffusion_ckpt_5000.pt'
+        agent.load(load_path)
         agent.eval()
         inference_losses = []
         prior = torch.zeros((1, horizon, action_dim), device=device)
@@ -192,21 +193,17 @@ if __name__ == '__main__':
             for batch in tqdm(test_loader, desc="Evaluating on Test Set"):
                 nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                 condition = {'image': nobs}
-                # resnet_condition = agent.model["condition"](condition)  # (1,512)
-                # trajectory, log = agent.sample(prior,
-                #                                 solver=solver,
-                #                                 n_samples = 1,
-                #                                 sample_steps=sampling_steps,
-                #                                 use_ema=use_ema, w_cg=w_cg, temperature=temperature)
                 
                 naction, _ = agent.sample(prior=prior, n_samples=1, 
                                           sample_steps=sampling_steps, solver=solver, 
                                           condition_cfg=condition, w_cfg=w_cg, use_ema=use_ema)   # (env_num, 64, 12)
                 
-                pred_label = unnormalize_label(naction, num_classes=64) 
+                pred_label = unnormalize_label(naction, num_classes=num_classes) 
                 # loss = F.mse_loss(pred_label, gth_label)
                 loss = F.l1_loss(pred_label.squeeze(), gth_label)
+                print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
                 inference_losses.append(loss.item())
+        
         loss_differences = np.array(inference_losses)
         avg_loss = np.mean(loss_differences)
         median_loss = np.median(loss_differences)
@@ -222,9 +219,20 @@ if __name__ == '__main__':
         plt.ylabel("Density")
         plt.legend()
         plt.grid()
-        plt.savefig("loss_distribution.png")
+        plt.savefig(save_path + f"loss_distribution.png")
         plt.show()
                    
+    elif mode == 'case_inference':
+        # ---------------------- Case Test ----------------------
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1105_1556_transformer/diffusion_ckpt_5000.pt'
+        agent.load(load_path)
+        agent.eval()
+        inference_losses = []
+        prior = torch.zeros((1, horizon, action_dim), device=device)
+
+        with torch.no_grad():
+            for batch in tqdm(test_loader, desc="Evaluating on Test Set"):
+                nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
     
     else:
         raise ValueError(f"Invalid mode: {mode}")
