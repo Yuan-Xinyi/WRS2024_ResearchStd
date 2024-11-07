@@ -118,7 +118,7 @@ class BaseDiffusionSDE(DiffusionModel):
         - log: dict
             The log dictionary.
         """
-        loss = self.loss(x0, condition)
+        loss = self.loss(x0, condition)  # (batch, 513)
 
         loss.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm) \
@@ -385,7 +385,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
 
         xt = alpha * x0 + sigma * eps
-        xt = (1. - self.fix_mask) * xt + self.fix_mask * x0
+        xt = (1. - self.fix_mask) * xt + self.fix_mask * x0  # fix mask shape(1,1,513)
 
         return xt, t, eps
 

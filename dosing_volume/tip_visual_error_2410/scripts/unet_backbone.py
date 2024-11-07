@@ -38,9 +38,9 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'inference'  # ['train', 'inference', 'case_inference']
+mode = 'train'  # ['train', 'inference', 'case_inference']
 train_batch_size = 8
-test_batch_size = 1
+test_batch_size = 2
 solver = 'ddpm'
 diffusion_steps = 20
 predict_noise = False # [True, False]
@@ -106,8 +106,14 @@ if __name__ == '__main__':
 
     # --------------- Network Architecture -----------------
     '''x max and x min'''
-    x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
-    x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
+    if backbone == 'transformer':
+        x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
+        x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
+    elif backbone == 'unet':
+        x_max = torch.ones((horizon, action_dim), device=device) * +action_scale
+        x_min = torch.ones((horizon, action_dim), device=device) * -action_scale
+    else:
+        raise ValueError(f"Invalid backbone: {backbone}")
 
     # dropout=0.0 to use no CFG but serve as FiLM encoder
     nn_condition = MultiImageObsCondition(
@@ -134,7 +140,7 @@ if __name__ == '__main__':
         loss_weight[0, :action_dim] = action_loss_weight
 
         agent = DiscreteDiffusionSDE(nn_diffusion, 
-                                    nn_condition=nn_condition, 
+                                    nn_condition=None, 
                                     fix_mask=fix_mask, 
                                     x_max=x_max,
                                     x_min=x_min,
@@ -143,6 +149,7 @@ if __name__ == '__main__':
                                     device=device, 
                                     diffusion_steps=diffusion_steps, 
                                     predict_noise=predict_noise)
+        print('checkpoint')
         # agent = DDPM(
         #     nn_diffusion=nn_diffusion, nn_condition=None, device=device,
         #     diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
@@ -181,22 +188,24 @@ if __name__ == '__main__':
                     diffusion_loss = agent.update(naction, condition)['loss']
                 
                 elif backbone == 'unet':
+                    expand_dim = 4
                     img, action = batch[0].to(device).float(), batch[1].to(device).float()
                     
                     # process the image into observation
                     condition = {'image': img}
                     obs = nn_condition(condition)  # (batch, 512)
                     # obs = agent.model["condition"](condition)  # (batch, 512)
-                    # obs = obs.unsqueeze(1)  # (batch, 1, 512)
-                    
+                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
+                    obs = obs.expand(-1, expand_dim, -1)
                     
                     # Normalize the label
                     naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
                     # naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
                     naction = naction.unsqueeze(1)  # (batch, 1)
+                    naction = naction.expand(-1, expand_dim, -1)  # (batch, 1, 1)
 
                     # concat the observation and action
-                    traj = torch.cat([naction, obs], dim=-1)
+                    traj = torch.cat([naction, obs], dim=-1) # (batch, 512+1)
                     diffusion_loss = agent.update(traj)['loss']
 
                 log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update

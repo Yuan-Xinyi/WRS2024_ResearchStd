@@ -156,7 +156,7 @@ class JannerUNet1d(BaseNNDiffusion):
                 condition: Optional[torch.Tensor] = None):
         """
         Input:
-            x:          (b, horizon, in_dim)
+            x:          (b, horizon, in_dim) current wrong input: (horizon,batch_size,in_dim)
             noise:      (b, )
             condition:  (b, emb_dim) or None / No condition indicates zeros((b, emb_dim))
 
@@ -165,15 +165,14 @@ class JannerUNet1d(BaseNNDiffusion):
         """
         # check horizon dimension
         assert x.shape[1] & (x.shape[1] - 1) == 0, "Ta dimension must be 2^n"
-
-        x = x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)  # (b, in_dim, horizon)
 
         emb = self.map_noise(noise)
         if condition is not None:
             emb = emb + condition
         else:
-            emb = emb + torch.zeros_like(emb)  #(1,32)
-        emb = self.map_emb(emb)
+            emb = emb + torch.zeros_like(emb)
+        emb = self.map_emb(emb)  # (b, model_dim)
 
         h = []
 
