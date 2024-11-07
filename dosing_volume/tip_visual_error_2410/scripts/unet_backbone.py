@@ -38,7 +38,9 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'train'  # ['train', 'inference', 'case_inference']
+mode = 'inference'  # ['train', 'inference', 'case_inference']
+train_batch_size = 8
+test_batch_size = 1
 solver = 'ddpm'
 diffusion_steps = 20
 predict_noise = False # [True, False]
@@ -95,8 +97,8 @@ if __name__ == '__main__':
     test_data = TipsDataset(test_list)
 
     # Create data loaders
-    train_loader = DataLoader(dataset = train_data, batch_size = 1, shuffle = True)
-    test_loader = DataLoader(dataset = test_data, batch_size = 4, shuffle = False)
+    train_loader = DataLoader(dataset = train_data, batch_size = train_batch_size, shuffle = True)
+    test_loader = DataLoader(dataset = test_data, batch_size = test_batch_size, shuffle = False)
 
     # ResNet18 has output dim of 512
     vision_feature_dim = 512
@@ -131,20 +133,20 @@ if __name__ == '__main__':
         loss_weight = torch.ones((horizon, obs_dim + action_dim))
         loss_weight[0, :action_dim] = action_loss_weight
 
-        # agent = DiscreteDiffusionSDE(nn_diffusion, 
-        #                             nn_condition=nn_condition, 
-        #                             fix_mask=fix_mask, 
-        #                             x_max=x_max,
-        #                             x_min=x_min,
-        #                             loss_weight=loss_weight, 
-        #                             ema_rate=ema_rate,
-        #                             device=device, 
-        #                             diffusion_steps=diffusion_steps, 
-        #                             predict_noise=predict_noise)
-        agent = DDPM(
-            nn_diffusion=nn_diffusion, nn_condition=None, device=device,
-            diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
-            predict_noise=predict_noise, optim_params={"lr": lr})
+        agent = DiscreteDiffusionSDE(nn_diffusion, 
+                                    nn_condition=nn_condition, 
+                                    fix_mask=fix_mask, 
+                                    x_max=x_max,
+                                    x_min=x_min,
+                                    loss_weight=loss_weight, 
+                                    ema_rate=ema_rate,
+                                    device=device, 
+                                    diffusion_steps=diffusion_steps, 
+                                    predict_noise=predict_noise)
+        # agent = DDPM(
+        #     nn_diffusion=nn_diffusion, nn_condition=None, device=device,
+        #     diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
+        #     predict_noise=predict_noise, optim_params={"lr": lr})
     else:
         raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -185,12 +187,13 @@ if __name__ == '__main__':
                     condition = {'image': img}
                     obs = nn_condition(condition)  # (batch, 512)
                     # obs = agent.model["condition"](condition)  # (batch, 512)
-                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
+                    # obs = obs.unsqueeze(1)  # (batch, 1, 512)
                     
                     
                     # Normalize the label
                     naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                    naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                    # naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                    naction = naction.unsqueeze(1)  # (batch, 1)
 
                     # concat the observation and action
                     traj = torch.cat([naction, obs], dim=-1)
@@ -230,7 +233,7 @@ if __name__ == '__main__':
         if backbone == 'transformer':
             prior = torch.zeros((1, horizon, action_dim), device=device)
         elif backbone == 'unet':
-            prior = torch.zeros((horizon, 4, action_dim+obs_dim), device=device)
+            prior = torch.zeros((horizon, test_batch_size, action_dim+obs_dim), device=device)
         else:
             raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -247,7 +250,7 @@ if __name__ == '__main__':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
                     condition = {'image': img}
                     obs = agent.model["condition"](condition) # (batch, 512)
-                    # prior[0, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
+                    prior[0, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
 
                     trajectory, log = agent.sample(prior, solver=solver, n_samples = 1, sample_steps=sampling_steps,
                                                    use_ema=use_ema, w_cg=w_cg, temperature=temperature)

@@ -172,7 +172,7 @@ class JannerUNet1d(BaseNNDiffusion):
         if condition is not None:
             emb = emb + condition
         else:
-            emb = emb + torch.zeros_like(emb)
+            emb = emb + torch.zeros_like(emb)  #(1,32)
         emb = self.map_emb(emb)
 
         h = []
