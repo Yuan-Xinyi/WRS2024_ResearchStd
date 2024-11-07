@@ -95,8 +95,8 @@ if __name__ == '__main__':
     test_data = TipsDataset(test_list)
 
     # Create data loaders
-    train_loader = DataLoader(dataset = train_data, batch_size = batch_size, shuffle = True)
-    test_loader = DataLoader(dataset = test_data, batch_size = 1, shuffle = False)
+    train_loader = DataLoader(dataset = train_data, batch_size = 1, shuffle = True)
+    test_loader = DataLoader(dataset = test_data, batch_size = 4, shuffle = False)
 
     # ResNet18 has output dim of 512
     vision_feature_dim = 512
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     # --------------- Network Architecture -----------------
     '''x max and x min'''
     x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
-    x_min = torch.zeros((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
+    x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
 
     # dropout=0.0 to use no CFG but serve as FiLM encoder
     nn_condition = MultiImageObsCondition(
@@ -131,16 +131,20 @@ if __name__ == '__main__':
         loss_weight = torch.ones((horizon, obs_dim + action_dim))
         loss_weight[0, :action_dim] = action_loss_weight
 
-        agent = DiscreteDiffusionSDE(nn_diffusion, 
-                                    nn_condition=nn_condition, 
-                                    fix_mask=fix_mask, 
-                                    x_max=x_max,
-                                    x_min=x_min,
-                                    loss_weight=loss_weight, 
-                                    ema_rate=ema_rate,
-                                    device=device, 
-                                    diffusion_steps=diffusion_steps, 
-                                    predict_noise=predict_noise)
+        # agent = DiscreteDiffusionSDE(nn_diffusion, 
+        #                             nn_condition=nn_condition, 
+        #                             fix_mask=fix_mask, 
+        #                             x_max=x_max,
+        #                             x_min=x_min,
+        #                             loss_weight=loss_weight, 
+        #                             ema_rate=ema_rate,
+        #                             device=device, 
+        #                             diffusion_steps=diffusion_steps, 
+        #                             predict_noise=predict_noise)
+        agent = DDPM(
+            nn_diffusion=nn_diffusion, nn_condition=None, device=device,
+            diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
+            predict_noise=predict_noise, optim_params={"lr": lr})
     else:
         raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -179,14 +183,17 @@ if __name__ == '__main__':
                     
                     # process the image into observation
                     condition = {'image': img}
-                    obs = agent.model["condition"](condition)  # (batch, 512)
+                    obs = nn_condition(condition)  # (batch, 512)
+                    # obs = agent.model["condition"](condition)  # (batch, 512)
+                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
+                    
                     
                     # Normalize the label
                     naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                    naction = naction.unsqueeze(1) # (batch, 1)
+                    naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
 
                     # concat the observation and action
-                    traj = torch.cat([naction, obs], dim=1)
+                    traj = torch.cat([naction, obs], dim=-1)
                     diffusion_loss = agent.update(traj)['loss']
 
                 log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
@@ -216,44 +223,66 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/results/diffuser/1106_1750_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1107_1153_unet_train/diffusion_ckpt_20000.pt'
         agent.load(load_path)
         agent.eval()
         inference_losses = []
-        prior = torch.zeros((1, horizon, action_dim), device=device)
+        if backbone == 'transformer':
+            prior = torch.zeros((1, horizon, action_dim), device=device)
+        elif backbone == 'unet':
+            prior = torch.zeros((horizon, 4, action_dim+obs_dim), device=device)
+        else:
+            raise ValueError(f"Invalid backbone: {backbone}")
 
         with torch.no_grad():
             for batch in test_loader:
-                nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
-                condition = {'image': nobs}
-                
-                naction, _ = agent.sample(prior=prior, n_samples=1, 
-                                          sample_steps=sampling_steps, solver=solver, 
-                                          condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
-                print('current action is:', naction)
-                pred_label = uniform_unnormalize_label(naction, num_classes=num_classes, scale=action_scale) 
-                loss = F.mse_loss(torch.tensor(pred_label).to(device='cuda'), gth_label)
+                if backbone == 'transformer':
+                    nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
+                    condition = {'image': nobs}
+                    
+                    naction, _ = agent.sample(prior=prior, n_samples=1, 
+                                            sample_steps=sampling_steps, solver=solver, 
+                                            condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
+                elif backbone == 'unet':
+                    img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
+                    condition = {'image': img}
+                    obs = agent.model["condition"](condition) # (batch, 512)
+                    # prior[0, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
+
+                    trajectory, log = agent.sample(prior, solver=solver, n_samples = 1, sample_steps=sampling_steps,
+                                                   use_ema=use_ema, w_cg=w_cg, temperature=temperature)
+                    naction = trajectory[:, :, :action_dim].squeeze()
+                    print('gth_label:', gth_label)
+                    for action in naction:
+                        pred_label = uniform_unnormalize_label(action, num_classes=num_classes, scale=action_scale) 
+                        print('pred_label: ',pred_label)
+                    # print('finished')
+
+
+                # print('current action is:', naction)
+                # pred_label = uniform_unnormalize_label(naction, num_classes=num_classes, scale=action_scale) 
+                # loss = F.mse_loss(torch.tensor(pred_label).to(device='cuda'), gth_label)
 
                 # print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
-                inference_losses.append(loss.item())
+        #         inference_losses.append(loss.item())
         
-        loss_differences = np.array(inference_losses)
-        avg_loss = np.mean(loss_differences)
-        median_loss = np.median(loss_differences)
-        print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
+        # loss_differences = np.array(inference_losses)
+        # avg_loss = np.mean(loss_differences)
+        # median_loss = np.median(loss_differences)
+        # print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
 
-        plt.figure(figsize=(10, 6))
-        plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
+        # plt.figure(figsize=(10, 6))
+        # plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
 
-        sns.kdeplot(loss_differences, color='b', label="KDE Curve")
+        # sns.kdeplot(loss_differences, color='b', label="KDE Curve")
 
-        plt.title("Probability Distribution of MSE Loss Differences")
-        plt.xlabel("MSE Loss Difference")
-        plt.ylabel("Density")
-        plt.legend()
-        plt.grid()
-        plt.savefig(save_path + f"loss_distribution.png")
-        plt.show()
+        # plt.title("Probability Distribution of MSE Loss Differences")
+        # plt.xlabel("MSE Loss Difference")
+        # plt.ylabel("Density")
+        # plt.legend()
+        # plt.grid()
+        # plt.savefig(save_path + f"loss_distribution.png")
+        # plt.show()
                    
     elif mode == 'case_inference':
         # ---------------------- Case Test ----------------------

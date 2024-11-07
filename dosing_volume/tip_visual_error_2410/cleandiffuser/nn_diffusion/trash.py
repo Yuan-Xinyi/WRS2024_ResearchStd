@@ -63,10 +63,10 @@ class ResidualBlock(nn.Module):
             nn.Mish(), nn.Linear(emb_dim, out_dim))
         self.residual_conv = nn.Conv1d(in_dim, out_dim, 1) if in_dim != out_dim else nn.Identity()
 
-    def forward(self, x, emb): # x: (1,513,1)  emb: (1,32)
-        out = self.conv1(x) + self.emb_mlp(emb).unsqueeze(-1) # (1,32,1)
+    def forward(self, x, emb):
+        out = self.conv1(x) + self.emb_mlp(emb).unsqueeze(-1)
         out = self.conv2(out)
-        return out + self.residual_conv(x)  # (1,32,1) + (1,32,1) = (1,32,1)
+        return out + self.residual_conv(x)
 
 
 class LinearAttention(nn.Module):
@@ -103,11 +103,12 @@ class JannerUNet1d(BaseNNDiffusion):
             emb_dim: int = 32,
             kernel_size: int = 3,
             dim_mult: List[int] = [1, 2, 2, 2],
-            timestep_emb_type: str = "positional",
             norm_type: str = "groupnorm",
             attention: bool = False,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         dims = [in_dim] + [model_dim * m for m in np.cumprod(dim_mult)]
         in_out = list(zip(dims[:-1], dims[1:]))
@@ -131,7 +132,7 @@ class JannerUNet1d(BaseNNDiffusion):
             ]))
 
         mid_dim = dims[-1]
-        self.mid_block1 = ResidualBlock(mid_dim, mid_dim, model_dim, kernel_size, norm_type)  # mid_dim = 256, model_dim = 32
+        self.mid_block1 = ResidualBlock(mid_dim, mid_dim, model_dim, kernel_size, norm_type)
         self.mid_attn = LinearAttention(mid_dim) if attention else nn.Identity()
         self.mid_block2 = ResidualBlock(mid_dim, mid_dim, model_dim, kernel_size, norm_type)
 
@@ -156,42 +157,45 @@ class JannerUNet1d(BaseNNDiffusion):
         """
         Input:
             x:          (b, horizon, in_dim)
-            noise:      (b, ) (8)
+            noise:      (b, )
             condition:  (b, emb_dim) or None / No condition indicates zeros((b, emb_dim))
 
         Output:
             y:          (b, horizon, in_dim)
         """
+        # check horizon dimension
+        assert x.shape[1] & (x.shape[1] - 1) == 0, "Ta dimension must be 2^n"
 
-        x = x.permute(0, 2, 1)  # (1,8,513) --> (1,513,8)
+        x = x.permute(0, 2, 1)
 
-        emb = self.map_noise(noise)  # (8,32)
+        emb = self.map_noise(noise)
         if condition is not None:
             emb = emb + condition
-        emb = self.map_emb(emb)  #(8,32)
+        else:
+            emb = emb + torch.zeros_like(emb)
+        emb = self.map_emb(emb)
 
         h = []
 
         for resnet1, resnet2, attn, downsample in self.downs:
-            x = resnet1(x, emb) # (1,513,8) --> (8,32,8)  --> (8,128,4)  --> (8,256,2)
-            x = resnet2(x, emb) # (8,32,8) --> (8,128,4) --> (8,256,2)
-            x = attn(x)  # (8,32,8) --> (8,128,4) --> (8,256,2)
+            x = resnet1(x, emb)
+            x = resnet2(x, emb)
+            x = attn(x)
             h.append(x)
-            x = downsample(x) # (8,32,4)  --> (8,128,2) --> (8,256,1)
+            x = downsample(x)
 
-        x = self.mid_block1(x, emb)  # (8,256,2)
-        x = self.mid_attn(x)  # (8,256,2)
-        x = self.mid_block2(x, emb) # (8,256,2)
+        x = self.mid_block1(x, emb)
+        x = self.mid_attn(x)
+        x = self.mid_block2(x, emb)
 
         for resnet1, resnet2, attn, upsample in self.ups:
-            # h = (8,256,2) --> (8,128,4) --> (8,32,8)
             x = torch.cat([x, h.pop()], dim=1)
             x = resnet1(x, emb)
             x = resnet2(x, emb)
             x = attn(x)
             x = upsample(x)
 
-        x = self.final_conv(x)  # (8,8,513)
+        x = self.final_conv(x)
 
         x = x.permute(0, 2, 1)
         return x
