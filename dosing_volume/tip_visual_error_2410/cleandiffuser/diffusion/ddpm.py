@@ -86,17 +86,14 @@ class DDPM(DiffusionModel):
         return xt, t, eps
 
     def loss(self, x0, condition=None):
-        xt, t, eps = self.add_noise(x0) # (64,1,1)
-        condition = self.model["condition"](condition) if condition is not None else None  # (batch, 512)
+        xt, t, eps = self.add_noise(x0)
+        condition = self.model["condition"](condition) if condition is not None else None
         if self.predict_noise:
             loss = (self.model["diffusion"](xt, t, condition) - eps) ** 2
         else:
-            x_pred = self.model["diffusion"](xt, t, condition)
-            loss = (x_pred - x0) ** 2
-            # loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
+            loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
 
         return (loss * self.loss_weight * (1 - self.fix_mask)).mean()
-
 
     def update(self, x0, condition=None, update_ema=True, **kwargs):
         loss = self.loss(x0, condition)

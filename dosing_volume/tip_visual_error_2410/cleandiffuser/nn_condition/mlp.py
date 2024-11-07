@@ -8,18 +8,27 @@ from cleandiffuser.nn_condition import IdentityCondition, get_mask
 
 
 class LinearCondition(IdentityCondition):
+    """ A sample affine condition
+
+    Use a linear layer to project the input condition to the desired dimension.
+
+    Args:
+        in_dim: int,
+            The input dimension of the condition
+        out_dim: int,
+            The output dimension of the condition
+        dropout: float,
+            The label dropout rate, Default: 0.25
+
+    Examples:
+        >>> nn_condition = LinearCondition(in_dim=5, out_dim=10)
+        >>> condition = torch.randn(2, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 10])
+        >>> condition = torch.randn(2, 20, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 20, 10])
     """
-    MLP condition is a simple multi-layer perceptron to process the input condition.
-
-    Input:
-        - condition: (b, ..., in_dim)
-        - mask :     (b, ) or None, None means no mask
-        - dropout:   float, probability of condition dropout
-
-    Output:
-        - condition: (b, ..., out_dim)
-    """
-
     def __init__(self, in_dim: int, out_dim: int, dropout: float = 0.25):
         super().__init__(dropout)
         self.affine = nn.Linear(in_dim, out_dim)
@@ -31,18 +40,32 @@ class LinearCondition(IdentityCondition):
 
 
 class MLPCondition(IdentityCondition):
+    """ A simple MLP condition
+
+    Use a simple MLP to project the input condition to the desired dimension.
+
+    Args:
+        in_dim: int,
+            The input dimension of the condition
+        out_dim: int,
+            The output dimension of the condition
+        hidden_dims: List[int],
+            The hidden dimensions of the MLP
+        act: nn.Module,
+            The activation function of the MLP
+        dropout: float,
+            The label dropout rate
+
+    Examples:
+        >>> nn_condition = MLPCondition(in_dim=5, out_dim=10)
+        >>> condition = torch.randn(2, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 10])
+        >>> condition = torch.randn(2, 20, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 20, 10])
     """
-    MLP condition is a simple multi-layer perceptron to process the input condition.
-
-    Input:
-        - condition: (b, *cond_in_shape)
-        - mask :     (b, ) or None, None means no mask
-
-    Output:
-        - condition: (b, *cond_out_shape)
-    """
-
-    def __init__(self, in_dim: int, out_dim: int, hidden_dims: List[int], 
+    def __init__(self, in_dim: int, out_dim: int, hidden_dims: List[int],
                  act=nn.LeakyReLU(), dropout: float = 0.25):
         super().__init__(dropout)
         hidden_dims = [hidden_dims, ] if isinstance(hidden_dims, int) else hidden_dims

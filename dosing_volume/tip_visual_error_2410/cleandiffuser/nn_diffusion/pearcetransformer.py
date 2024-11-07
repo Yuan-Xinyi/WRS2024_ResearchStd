@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
+from typing import Optional
 
 
 class TimeSiren(nn.Module):
@@ -89,11 +90,15 @@ class EmbeddingBlock(nn.Module):
 
 class PearceTransformer(BaseNNDiffusion):
     def __init__(
-            self, act_dim: int, To: int = 1, timestep_emb_type: str = "positional",
-            emb_dim: int = 128, trans_emb_dim: int = 64, nhead: int = 16
+            self, act_dim: int, To: int = 1,
+            emb_dim: int = 128, trans_emb_dim: int = 64, nhead: int = 16,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
+        self.To = To
+        self.emb_dim = emb_dim
         self.act_emb = nn.Sequential(
             nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
@@ -115,7 +120,7 @@ class PearceTransformer(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, act_dim)
@@ -125,6 +130,9 @@ class PearceTransformer(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        if condition is None:
+            condition = torch.zero((x.shape[0], self.To, self.emb_dim)).to(x.device)
+
         x_e, t_e = self.act_emb(x), self.map_noise(noise)
 
         x_input, t_input, c_input = self.act_to_input(x_e), self.t_to_input(t_e), self.cond_to_input(condition)

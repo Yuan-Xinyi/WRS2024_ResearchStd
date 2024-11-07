@@ -1,7 +1,11 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import FourierEmbedding, SinusoidalEmbedding, PositionalEmbedding
+from cleandiffuser.utils import (FourierEmbedding, PositionalEmbedding,
+                                 SinusoidalEmbedding)
+
 from .base_nn_diffusion import BaseNNDiffusion
 
 
@@ -64,11 +68,14 @@ class ChiTransformer(BaseNNDiffusion):
             p_drop_emb: float = 0.0, p_drop_attn: float = 0.3,
             n_cond_layers: int = 0,
             timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(d_model, timestep_emb_type)
+        super().__init__(d_model, timestep_emb_type, timestep_emb_params)
 
         T = Ta
         T_cond = 1 + To
+        self.To = To
+        self.obs_dim = obs_dim
 
         self.act_emb = nn.Linear(act_dim, d_model)
         self.pos_emb = nn.Parameter(torch.zeros(1, Ta, d_model))
@@ -119,7 +126,7 @@ class ChiTransformer(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, Ta, act_dim)
@@ -129,12 +136,12 @@ class ChiTransformer(BaseNNDiffusion):
         Output:
             y:          (b, Ta, act_dim)
         """
+        if condition is None:
+            condition = torch.zeros((x.shape[0], self.To, self.obs_dim)).to(x.device)  # (b, To, obs_dim)
+        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model)
 
-        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model) (batch,1,256)
-
-        act_emb = self.act_emb(x) # (batch,1,1) --> (batch,1,256)
-        obs_emb = self.obs_emb(condition).unsqueeze(1)  # (batch,512) -->( batch,1,256)
-
+        act_emb = self.act_emb(x)
+        obs_emb = self.obs_emb(condition)
 
         cond_emb = torch.cat([t_emb, obs_emb], dim=1)  # (b, 1+To, d_model)
         cond_pos_emb = self.cond_pos_emb[:, :cond_emb.shape[1], :]
@@ -146,6 +153,6 @@ class ChiTransformer(BaseNNDiffusion):
         x = self.decoder(tgt=x, memory=memory, tgt_mask=self.mask, memory_mask=self.memory_mask)
 
         x = self.ln_f(x)
-        x = self.head(x)  # (b, Ta, act_dim)
+        x = self.head(x)
 
         return x

@@ -230,14 +230,14 @@ class MultiImageObsCondition(BaseNNCondition):
         else:
             # run each rgb obs to independent models
             for key in self.rgb_keys:
-                img = obs_dict[key]  # （1，3，120，120）
+                img = obs_dict[key]
                 if batch_size is None:
                     batch_size = img.shape[0]
                 else:
                     assert batch_size == img.shape[0]
                 assert img.shape[1:] == self.key_shape_map[key]
                 img = self.key_transform_map[key](img)
-                feature = self.key_model_map[key](img)  # （1，512）
+                feature = self.key_model_map[key](img)
                 features.append(feature)
         
         # process lowdim input

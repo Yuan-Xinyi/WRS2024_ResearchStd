@@ -1,8 +1,9 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from cleandiffuser.utils import GroupNorm1d, SinusoidalEmbedding
 
 
 class DQLMlp(BaseNNDiffusion):
@@ -11,10 +12,12 @@ class DQLMlp(BaseNNDiffusion):
         obs_dim: int,
         act_dim: int,
         emb_dim: int = 16, 
-        timestep_emb_type: str = "positional"
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
-        
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
+
+        self.obs_dim = obs_dim
         self.time_mlp = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 2), nn.Mish(), nn.Linear(emb_dim * 2, emb_dim))
         
@@ -27,7 +30,7 @@ class DQLMlp(BaseNNDiffusion):
         
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, act_dim)
@@ -37,6 +40,8 @@ class DQLMlp(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        if condition is None:
+            condition = torch.zeros(x.shape[0], self.obs_dim).to(x.device)
         t = self.time_mlp(self.map_noise(noise))
         x = torch.cat([x, t, condition], -1)
         x = self.mid_layer(x)
