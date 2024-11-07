@@ -39,7 +39,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 # diffuser parameters
 solver = 'ddpm'
 diffusion_steps = 20
-predict_noise = False # [True, False]
+predict_noise = True # [True, False]
 obs_steps = 1
 action_steps = 1
 num_classes = 60
@@ -49,10 +49,10 @@ action_scale = 10.0
 mode = 'train'  # ['train', 'inference', 'case_inference']
 device = 'cuda'
 diffusion_gradient_steps = 10000
-batch_size = 16
+batch_size = 8
 log_interval = 100
 save_interval = 1000
-lr = 0.001
+lr = 0.0001
 num_epochs = 1
 
 action_dim = 1
