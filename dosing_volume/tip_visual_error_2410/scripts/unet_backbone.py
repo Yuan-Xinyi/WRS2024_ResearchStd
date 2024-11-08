@@ -38,9 +38,9 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'train'  # ['train', 'inference', 'case_inference']
-train_batch_size = 8
-test_batch_size = 2
+mode = 'inference'  # ['train', 'inference', 'case_inference']
+train_batch_size = 16
+test_batch_size = 1
 solver = 'ddpm'
 diffusion_steps = 20
 predict_noise = False # [True, False]
@@ -48,7 +48,7 @@ obs_steps = 1
 action_steps = 1
 num_classes = 60
 action_scale = 1.0
-action_loss_weight = 10.0
+action_loss_weight = 1.0
 
 # Training
 device = 'cuda'
@@ -60,7 +60,7 @@ lr = 0.0001
 num_epochs = 100
 
 action_dim = 1
-horizon = 1
+horizon = 4
 obs_steps = 1
 shape_meta = {
     'obs': {
@@ -78,7 +78,7 @@ ema_rate = 0.9999
 sampling_steps = 10
 w_cg = 0.0001
 temperature = 0.5
-use_ema = True
+use_ema = False
 
 
 
@@ -135,9 +135,9 @@ if __name__ == '__main__':
             timestep_emb_type="positional", attention=False, kernel_size=5)
         
         fix_mask = torch.zeros((horizon, obs_dim + action_dim))
-        fix_mask[0, action_dim:] = 1.
+        fix_mask[:, action_dim:] = 1.
         loss_weight = torch.ones((horizon, obs_dim + action_dim))
-        loss_weight[0, :action_dim] = action_loss_weight
+        loss_weight[:, :action_dim] = action_loss_weight
 
         agent = DiscreteDiffusionSDE(nn_diffusion, 
                                     nn_condition=None, 
@@ -188,7 +188,6 @@ if __name__ == '__main__':
                     diffusion_loss = agent.update(naction, condition)['loss']
                 
                 elif backbone == 'unet':
-                    expand_dim = 4
                     img, action = batch[0].to(device).float(), batch[1].to(device).float()
                     
                     # process the image into observation
@@ -196,13 +195,12 @@ if __name__ == '__main__':
                     obs = nn_condition(condition)  # (batch, 512)
                     # obs = agent.model["condition"](condition)  # (batch, 512)
                     obs = obs.unsqueeze(1)  # (batch, 1, 512)
-                    obs = obs.expand(-1, expand_dim, -1)
+                    obs = obs.expand(-1, horizon, -1)  # (batch, expand dim, 512)
                     
                     # Normalize the label
                     naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                    # naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-                    naction = naction.unsqueeze(1)  # (batch, 1)
-                    naction = naction.expand(-1, expand_dim, -1)  # (batch, 1, 1)
+                    naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                    naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
 
                     # concat the observation and action
                     traj = torch.cat([naction, obs], dim=-1) # (batch, 512+1)
@@ -235,14 +233,14 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1107_1153_unet_train/diffusion_ckpt_20000.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1156_unet_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         inference_losses = []
         if backbone == 'transformer':
             prior = torch.zeros((1, horizon, action_dim), device=device)
         elif backbone == 'unet':
-            prior = torch.zeros((horizon, test_batch_size, action_dim+obs_dim), device=device)
+            prior = torch.zeros((test_batch_size, horizon, action_dim+obs_dim), device=device)
         else:
             raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -258,17 +256,19 @@ if __name__ == '__main__':
                 elif backbone == 'unet':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
                     condition = {'image': img}
-                    obs = agent.model["condition"](condition) # (batch, 512)
-                    prior[0, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
+                    obs = nn_condition(condition)  # (batch, 512)
+                    # obs = agent.model["condition"](condition)  # (batch, 512)
+                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
+                    obs = obs.expand(-1, horizon, -1)  # (batch, expand dim, 512)
+
+                    prior[:, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
 
                     trajectory, log = agent.sample(prior, solver=solver, n_samples = 1, sample_steps=sampling_steps,
-                                                   use_ema=use_ema, w_cg=w_cg, temperature=temperature)
+                                                   use_ema=use_ema, w_cg=0.0, temperature=temperature)
                     naction = trajectory[:, :, :action_dim].squeeze()
-                    print('gth_label:', gth_label)
-                    for action in naction:
-                        pred_label = uniform_unnormalize_label(action, num_classes=num_classes, scale=action_scale) 
-                        print('pred_label: ',pred_label)
-                    # print('finished')
+                    mean_action = naction.mean()
+                    pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                    print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
 
 
                 # print('current action is:', naction)

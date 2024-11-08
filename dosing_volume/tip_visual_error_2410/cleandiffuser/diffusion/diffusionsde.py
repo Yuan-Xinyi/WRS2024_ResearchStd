@@ -104,6 +104,24 @@ class BaseDiffusionSDE(DiffusionModel):
 
         return (loss * self.loss_weight * (1 - self.fix_mask)).mean()
 
+    def action_loss(self, x0, condition=None):
+
+        xt, t, eps = self.add_noise(x0)
+
+        condition = self.model["condition"](condition) if condition is not None else None
+
+        if self.predict_noise:
+            loss = (self.model["diffusion"](xt, t, condition) - eps) ** 2
+        else:
+            loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
+            
+            '''for debugging purpose'''
+            pred = self.model["diffusion"](xt, t, condition)
+            loss_res = loss * self.loss_weight * (1 - self.fix_mask)
+            action_loss = loss_res[loss_res != 0]
+
+        return action_loss.mean()
+
     def update(self, x0, condition=None, update_ema=True, **kwargs):
         """One-step gradient update.
         Inputs:
@@ -118,7 +136,7 @@ class BaseDiffusionSDE(DiffusionModel):
         - log: dict
             The log dictionary.
         """
-        loss = self.loss(x0, condition)  # (batch, 513)
+        loss = self.action_loss(x0, condition)  # (batch, 513)
 
         loss.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm) \
@@ -385,6 +403,10 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
 
         xt = alpha * x0 + sigma * eps
+        # '''test'''
+        # p1 = (1. - self.fix_mask) * xt
+        # p2 = self.fix_mask * x0
+        # xt = p1 + p2
         xt = (1. - self.fix_mask) * xt + self.fix_mask * x0  # fix mask shape(1,1,513)
 
         return xt, t, eps
