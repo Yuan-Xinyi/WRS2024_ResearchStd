@@ -232,7 +232,7 @@ class MultiImageObsCondition(BaseNNCondition):
             for key in self.rgb_keys:
                 img = obs_dict[key]
                 if batch_size is None:
-                    batch_size = img.shape[0]
+                    batch_size = img.shape[0]  # B
                 else:
                     assert batch_size == img.shape[0]
                 assert img.shape[1:] == self.key_shape_map[key]
@@ -256,7 +256,7 @@ class MultiImageObsCondition(BaseNNCondition):
 
     def forward(self, obs_dict, mask=None):
         ori_batch_size, ori_seq_len = self.get_batch_size(obs_dict)
-        features = self.multi_image_forward(obs_dict)
+        features = self.multi_image_forward(obs_dict)  #(1,2048)
         # linear embedding
         result = self.mlp(features)
         if self.use_seq:

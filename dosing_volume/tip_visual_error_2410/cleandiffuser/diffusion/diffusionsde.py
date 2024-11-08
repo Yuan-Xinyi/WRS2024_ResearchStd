@@ -114,6 +114,7 @@ class BaseDiffusionSDE(DiffusionModel):
             loss = (self.model["diffusion"](xt, t, condition) - eps) ** 2
         else:
             loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
+            # loss = abs(self.model["diffusion"](xt, t, condition) - x0)
             
             '''for debugging purpose'''
             pred = self.model["diffusion"](xt, t, condition)
@@ -605,7 +606,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
             # fix the known portion, and preserve the sampling history
             xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
-            if preserve_history:
+            if preserve_history:  # false
                 log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
 
         # ================= Post-processing =================

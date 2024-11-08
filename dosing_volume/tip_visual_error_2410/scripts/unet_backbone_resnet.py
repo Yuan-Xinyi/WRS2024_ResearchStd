@@ -80,8 +80,9 @@ w_cg = 0.0001
 temperature = 0.5
 use_ema = False
 
-
-
+# define the vision encoder
+vision_encoder = get_resnet('resnet18')
+vision_encoder = replace_bn_with_gn(vision_encoder)
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
@@ -140,7 +141,7 @@ if __name__ == '__main__':
         loss_weight[:, :action_dim] = action_loss_weight
 
         agent = DiscreteDiffusionSDE(nn_diffusion, 
-                                    nn_condition=None, 
+                                    nn_condition=nn_condition, 
                                     fix_mask=fix_mask, 
                                     x_max=x_max,
                                     x_min=x_min,

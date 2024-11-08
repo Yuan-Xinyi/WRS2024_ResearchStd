@@ -105,6 +105,13 @@ class DDPM(DiffusionModel):
         if update_ema: self.ema_update()
         log = {"loss": loss.item(), "grad_norm": grad_norm}
         return log
+    
+    def direct_predict(self, x0, t, condition=None):
+        xt, t, eps = self.add_noise(x0)
+        condition = self.model["condition"](condition) if condition is not None else None
+        x_pred = self.model["diffusion"](xt, t, condition)
+
+        return x_pred
 
     def update_classifier(self, x0, condition):
         xt, t, eps = self.add_noise(x0)
