@@ -24,9 +24,10 @@ import seaborn as sns
 from datetime import datetime
 from cleandiffuser.diffusion.diffusionsde import BaseDiffusionSDE, DiscreteDiffusionSDE, BaseDiffusionSDE
 from cleandiffuser.nn_condition import MultiImageObsCondition
-from cleandiffuser.nn_diffusion import ChiTransformer, JannerUNet1d
+from cleandiffuser.nn_diffusion import ChiTransformer, JannerUNet1d, ChiUNet1d
 from cleandiffuser.utils import report_parameters
 from cleandiffuser.diffusion.ddpm import DDPM
+from cleandiffuser.dataset.dataset_utils import loop_dataloader
 # from cleandiffuser.dataset.dataset_utils import loop_dataloader
 
 '''preparations'''
@@ -70,7 +71,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet50' # ['resnet18', 'resnet50']
+rgb_model = 'resnet18' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
 
@@ -88,7 +89,7 @@ if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
     backbone = 'unet'
-    rootpath = f'{TimeCode}_{backbone}_{mode}'
+    rootpath = f'{TimeCode}_chiunet_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
@@ -98,8 +99,10 @@ if __name__ == '__main__':
     test_data = TipsDataset(test_list)
 
     # Create data loaders
-    train_loader = DataLoader(dataset = train_data, batch_size = train_batch_size, shuffle = True)
-    test_loader = DataLoader(dataset = test_data, batch_size = test_batch_size, shuffle = False)
+    train_loader = DataLoader(dataset = train_data, batch_size = train_batch_size, shuffle = True,
+                              num_workers=4, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(dataset = test_data, batch_size = test_batch_size, shuffle = False,
+                              num_workers=4, pin_memory=True, persistent_workers=True)
 
     # ResNet18 has output dim of 512
     vision_feature_dim = 512
@@ -111,13 +114,13 @@ if __name__ == '__main__':
         x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
         x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
     elif backbone == 'unet':
-        x_max = torch.ones((horizon, action_dim), device=device) * +action_scale
-        x_min = torch.ones((horizon, action_dim), device=device) * -action_scale
+        x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
+        x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale
     else:
         raise ValueError(f"Invalid backbone: {backbone}")
 
     # dropout=0.0 to use no CFG but serve as FiLM encoder
-    nn_condition = MultiImageObsCondition(shape_meta=shape_meta, emb_dim=512, rgb_model_name=rgb_model, 
+    nn_condition = MultiImageObsCondition(shape_meta=shape_meta, emb_dim=256, rgb_model_name=rgb_model, 
                                           use_group_norm=use_group_norm).to(device)
 
     if backbone == 'transformer':
@@ -127,29 +130,16 @@ if __name__ == '__main__':
         
         agent = DDPM(
             nn_diffusion=nn_diffusion, nn_condition=nn_condition, device=device,
-            diffusion_steps=diffusion_steps, x_max=x_max, x_min=x_min,
+            diffusion_steps=sampling_steps, x_max=x_max, x_min=x_min,
             predict_noise=predict_noise, optim_params={"lr": lr})
     
     elif backbone == 'unet':
-        nn_diffusion = JannerUNet1d(
-            obs_dim + action_dim, model_dim=32, emb_dim=32, dim_mult=[1, 4, 2],
-            timestep_emb_type="positional", attention=False, kernel_size=5)
+        nn_diffusion = ChiUNet1d(action_dim, 256, obs_steps, model_dim=256, emb_dim=256, dim_mult=[1, 2, 2],
+                                 obs_as_global_cond=True, timestep_emb_type="positional").to(device)
         
-        fix_mask = torch.zeros((horizon, obs_dim + action_dim))
-        fix_mask[:, action_dim:] = 1.
-        loss_weight = torch.ones((horizon, obs_dim + action_dim))
-        loss_weight[:, :action_dim] = action_loss_weight
-
-        agent = DiscreteDiffusionSDE(nn_diffusion, 
-                                    nn_condition=nn_condition, 
-                                    fix_mask=fix_mask, 
-                                    x_max=x_max,
-                                    x_min=x_min,
-                                    loss_weight=loss_weight, 
-                                    ema_rate=ema_rate,
-                                    device=device, 
-                                    diffusion_steps=diffusion_steps, 
-                                    predict_noise=predict_noise)
+        agent = DDPM(nn_diffusion=nn_diffusion, nn_condition=nn_condition, device=device,
+                     diffusion_steps=sampling_steps, x_max=x_max, x_min=x_min, optim_params={"lr": lr})
+        
     else:
         raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -158,7 +148,7 @@ if __name__ == '__main__':
     report_parameters(nn_diffusion)
     print(f"===================================================================================")
 
-    diffusion_lr_scheduler = CosineAnnealingLR(agent.optimizer, diffusion_gradient_steps)
+    diffusion_lr_scheduler = CosineAnnealingLR(agent.optimizer, T_max=diffusion_gradient_steps)
 
     if mode == 'train':
         wandb.init(project="tip_visual")
@@ -168,75 +158,72 @@ if __name__ == '__main__':
         log = {'avg_loss_diffusion': 0.}
         start_time = time.time()
 
-        for epoch in tqdm(range(num_epochs)):
-            for batch in train_loader:
-                if backbone == 'transformer': 
-                    nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
-                    
-                    '''normalize the label'''
-                    naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)  # (batch_size, 1)
-                    naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
-                    '''don't need to normalize the label'''
-                    # naction = action.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
-                    
-                    condition = {'image': nobs}
-                    # ----------- Gradient Step ------------
-                    diffusion_loss = agent.update(naction, condition)['loss']
+
+        for batch in loop_dataloader(train_loader):
+            if backbone == 'transformer': 
+                nobs, action = batch[0].to(device).float(), batch[1].to(device).float() # [image, label] image size: (batch_size, 3, 120, 120), label size: (batch_size)
                 
-                elif backbone == 'unet':
-                    img, action = batch[0].to(device).float(), batch[1].to(device).float()
-                    
-                    # process the image into observation
-                    condition = {'image': img}
-                    obs = nn_condition(condition)  # (batch, 512)
-                    # obs = agent.model["condition"](condition)  # (batch, 512)
-                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
-                    obs = obs.expand(-1, horizon, -1)  # (batch, expand dim, 512)
-                    
-                    # Normalize the label
-                    naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                    naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-                    naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+                '''normalize the label'''
+                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)  # (batch_size, 1)
+                naction = naction.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                '''don't need to normalize the label'''
+                # naction = action.unsqueeze(1).unsqueeze(2)  # (batch_size, 1, action_dim) (batch,1,1)
+                
+                condition = {'image': nobs}
+                # ----------- Gradient Step ------------
+                diffusion_loss = agent.update(naction, condition)['loss']
+            
+            elif backbone == 'unet':
+                img, action = batch[0].to(device).float(), batch[1].to(device).float()
+                
+                # process the image into observation
+                condition = {'image': img}
+                
+                # Normalize the label
+                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
+                naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
 
-                    # concat the observation and action
-                    traj = torch.cat([naction, obs], dim=-1) # (batch, 512+1)
-                    diffusion_loss = agent.update(traj)['loss']
+                diffusion_loss = agent.update(naction, condition)['loss']
 
-                log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
-                # print(f'[t={n_gradient_step + 1}] diffusion loss = {current_loss}')
-                diffusion_lr_scheduler.step()
+            log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
+            # print(f'[t={n_gradient_step + 1}] diffusion loss = {current_loss}')
+            diffusion_lr_scheduler.step()
 
-                # ----------- Logging ------------
-                if (n_gradient_step + 1) % log_interval == 0:
-                    log['gradient_steps'] = n_gradient_step + 1
-                    log["avg_loss_diffusion"] /= log_interval
-                    wandb.log(
-                        {'step': log['gradient_steps'],
-                        'avg_training_loss': log['avg_loss_diffusion'],
-                        'total_time': time.time() - start_time}, commit = True)
-                    print(log)
-                    log = {"avg_loss_diffusion": 0.}
+            # ----------- Logging ------------
+            if (n_gradient_step + 1) % log_interval == 0:
+                log['gradient_steps'] = n_gradient_step + 1
+                log["avg_loss_diffusion"] /= log_interval
+                wandb.log(
+                    {'step': log['gradient_steps'],
+                    'avg_training_loss': log['avg_loss_diffusion'],
+                    'total_time': time.time() - start_time}, commit = True)
+                print(log)
+                log = {"avg_loss_diffusion": 0.}
 
-                # ----------- Saving ------------
-                if (n_gradient_step + 1) % save_interval == 0:
-                    agent.save(save_path + f"diffusion_ckpt_{n_gradient_step + 1}.pt")
-                    agent.save(save_path + f"diffusion_ckpt_latest.pt")
+            # ----------- Saving ------------
+            if (n_gradient_step + 1) % save_interval == 0:
+                agent.save(save_path + f"diffusion_ckpt_{n_gradient_step + 1}.pt")
+                agent.save(save_path + f"diffusion_ckpt_latest.pt")
 
-                n_gradient_step += 1
-                if n_gradient_step >= diffusion_gradient_steps:
-                    break
+            n_gradient_step += 1
+            if n_gradient_step >= diffusion_gradient_steps:
+                break
         wandb.finish()
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1215_unet_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
+        agent.model.eval()
+        agent.model_ema.eval()
+
         inference_losses = []
         if backbone == 'transformer':
             prior = torch.zeros((1, horizon, action_dim), device=device)
         elif backbone == 'unet':
-            prior = torch.zeros((test_batch_size, horizon, action_dim+obs_dim), device=device)
+            prior = torch.zeros((test_batch_size, horizon, action_dim), device=device)
         else:
             raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -252,18 +239,9 @@ if __name__ == '__main__':
                 elif backbone == 'unet':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
                     condition = {'image': img}
-                    nn_condition.eval()
-                    obs = nn_condition(condition)  # (batch, 512)
-                    # obs = agent.model["condition"](condition)  # (batch, 512)
-                    obs = obs.unsqueeze(1)  # (batch, 1, 512)
-                    obs = obs.expand(-1, horizon, -1)  # (batch, expand dim, 512)
-
-                    prior[:, :, action_dim:] = obs  # (1, 1, obs_dim+action_dim)
-
-                    diffusion_loss = agent.update(prior)['loss']
-                    trajectory, log = agent.sample(prior, solver=solver, n_samples = 1, sample_steps=sampling_steps,
-                                                   use_ema=use_ema, w_cg=0.0, temperature=temperature)
-                    naction = trajectory[:, :, :action_dim].squeeze()
+                    naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
+                        solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
+                    
                     mean_action = naction.mean()
                     pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
                     print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
