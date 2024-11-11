@@ -73,7 +73,7 @@ class ChiUNet1d(BaseNNDiffusion):
             nn.Linear(emb_dim * 4, emb_dim))
 
         if obs_as_global_cond:
-            self.global_cond_encoder = nn.Linear(To * obs_dim, emb_dim)
+            self.global_cond_encoder = nn.Linear(To * obs_dim, emb_dim)  # in: 256, out: 256
             emb_dim = emb_dim * 2  # cat obs and emb
             self.local_cond_encoder = None
         else:
@@ -139,9 +139,9 @@ class ChiUNet1d(BaseNNDiffusion):
         # check Ta dimension
         assert x.shape[1] & (x.shape[1] - 1) == 0, "Ta dimension must be 2^n"
 
-        x = x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)  # (b, act_dim, Ta)
 
-        emb = self.map_noise(noise)
+        emb = self.map_noise(noise)  # (1) --> (1,256)
         emb = self.map_emb(emb)
 
         # If obs_as_global_cond, concatenate obs and emb
@@ -150,7 +150,7 @@ class ChiUNet1d(BaseNNDiffusion):
             if condition is not None:
                 emb = torch.cat([emb, condition], dim=-1)
             else:
-                emb = torch.cat([emb, torch.zeros_like(emb)], dim=-1)
+                emb = torch.cat([emb, torch.zeros_like(emb)], dim=-1)  # (b, 512)
             h_local = None
         else:
             condition = condition.permute(0, 2, 1)

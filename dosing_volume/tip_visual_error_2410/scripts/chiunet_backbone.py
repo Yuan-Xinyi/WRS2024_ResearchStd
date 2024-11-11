@@ -228,7 +228,7 @@ if __name__ == '__main__':
             raise ValueError(f"Invalid backbone: {backbone}")
 
         with torch.no_grad():
-            for batch in test_loader:
+            for batch in tqdm(test_loader):
                 if backbone == 'transformer':
                     nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                     condition = {'image': nobs}
@@ -245,32 +245,27 @@ if __name__ == '__main__':
                     mean_action = naction.mean()
                     pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
                     print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
-
-
-                # print('current action is:', naction)
-                # pred_label = uniform_unnormalize_label(naction, num_classes=num_classes, scale=action_scale) 
-                # loss = F.mse_loss(torch.tensor(pred_label).to(device='cuda'), gth_label)
-
-                # print('pred_label:', pred_label, 'gth_label:', gth_label, 'loss:', loss.item())
-        #         inference_losses.append(loss.item())
+                
+                loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
+                inference_losses.append(loss.item())
         
-        # loss_differences = np.array(inference_losses)
-        # avg_loss = np.mean(loss_differences)
-        # median_loss = np.median(loss_differences)
-        # print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
+        loss_differences = np.array(inference_losses)
+        avg_loss = np.mean(loss_differences)
+        median_loss = np.median(loss_differences)
+        print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
 
-        # plt.figure(figsize=(10, 6))
-        # plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
+        plt.figure(figsize=(10, 6))
+        plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
 
-        # sns.kdeplot(loss_differences, color='b', label="KDE Curve")
+        sns.kdeplot(loss_differences, color='b', label="KDE Curve")
 
-        # plt.title("Probability Distribution of MSE Loss Differences")
-        # plt.xlabel("MSE Loss Difference")
-        # plt.ylabel("Density")
-        # plt.legend()
-        # plt.grid()
-        # plt.savefig(save_path + f"loss_distribution.png")
-        # plt.show()
+        plt.title("Probability Distribution of MSE Loss Differences")
+        plt.xlabel("MSE Loss Difference")
+        plt.ylabel("Density")
+        plt.legend()
+        plt.grid()
+        plt.savefig(save_path + f"loss_distribution.png")
+        plt.show()
                    
     elif mode == 'case_inference':
         # ---------------------- Case Test ----------------------
