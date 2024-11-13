@@ -39,7 +39,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'inference'  # ['train', 'inference', 'case_inference']
+mode = 'train'  # ['train', 'inference', 'case_inference']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -47,7 +47,7 @@ diffusion_steps = 20
 predict_noise = False # [True, False]
 obs_steps = 1
 action_steps = 1
-num_classes = 60
+num_classes = 61
 action_scale = 1.0
 action_loss_weight = 1.0
 
@@ -94,7 +94,21 @@ if __name__ == '__main__':
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
 
-    train_list, test_list = load_data(dataset_dir, seed)
+    '''for the first time, save the dataset into npy file'''
+    # train_list, test_list = load_data(dataset_dir, seed)
+    # trainset_list = np.array(train_list)
+    # testset_list = np.array(test_list)
+    # np.save('visual_error_diffusion_training.npy', trainset_list)
+    # np.save('visual_error_diffusion_testing.npy', testset_list)
+    # exit() # exit after saving the dataset
+
+    '''load the dataset from npy file'''
+    train_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_training.npy', allow_pickle=True)
+    test_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_testing.npy', allow_pickle=True)
+
+    train_list = train_data.tolist()
+    test_list = test_data.tolist()
+
     train_data = TipsDataset(train_list)
     test_data = TipsDataset(test_list)
 
@@ -213,7 +227,7 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
         agent.load(load_path)
         agent.eval()
         agent.model.eval()
