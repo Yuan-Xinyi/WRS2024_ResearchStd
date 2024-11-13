@@ -70,7 +70,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet50' # ['resnet18', 'resnet50']
+rgb_model = 'resnet18' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
 
@@ -80,9 +80,6 @@ w_cg = 0.0001
 temperature = 0.5
 use_ema = False
 
-# define the vision encoder
-vision_encoder = get_resnet('resnet18')
-vision_encoder = replace_bn_with_gn(vision_encoder)
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
@@ -223,9 +220,9 @@ if __name__ == '__main__':
         # ---------------------- Testing ----------------------
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
         
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
+        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
