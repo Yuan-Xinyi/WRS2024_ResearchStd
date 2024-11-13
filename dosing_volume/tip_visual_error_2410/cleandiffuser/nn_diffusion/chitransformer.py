@@ -138,12 +138,15 @@ class ChiTransformer(BaseNNDiffusion):
         """
         if condition is None:
             condition = torch.zeros((x.shape[0], self.To, self.obs_dim)).to(x.device)  # (b, To, obs_dim)
-        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model)
+        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model) （16，1，256）
 
-        act_emb = self.act_emb(x)
-        obs_emb = self.obs_emb(condition)
+        act_emb = self.act_emb(x)  # （16，4，256）
+        obs_emb = self.obs_emb(condition)  # (16,256)
+        
+        # new added unsequeeze code, remark
+        obs_emb = obs_emb.unsqueeze(1)
 
-        cond_emb = torch.cat([t_emb, obs_emb], dim=1)  # (b, 1+To, d_model)
+        cond_emb = torch.cat([t_emb, obs_emb], dim=1)  # (b, 1+To, d_model) (16,2,256)
         cond_pos_emb = self.cond_pos_emb[:, :cond_emb.shape[1], :]
         memory = self.drop(cond_emb + cond_pos_emb)
         memory = self.encoder(memory)  # (b, 1+To, d_model)

@@ -39,7 +39,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'loop_inference'  # ['train', 'inference', 'case_inference']
+mode = 'train'  # ['train', 'inference', 'case_inference']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -54,14 +54,13 @@ action_loss_weight = 1.0
 # Training
 device = 'cuda'
 diffusion_gradient_steps = 200000
-batch_size = 8
 log_interval = 100
 save_interval = 1000
 lr = 0.00001
 num_epochs = 1000
 
 action_dim = 1
-horizon = 4
+horizon = 8
 obs_steps = 1
 shape_meta = {
     'obs': {
@@ -71,7 +70,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet18' # ['resnet18', 'resnet50']
+rgb_model = 'resnet50' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
 
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
     backbone = 'unet'
-    rootpath = f'{TimeCode}_chiunet_{mode}'
+    rootpath = f'{TimeCode}_chiunet_{horizon}_{rgb_model}_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
