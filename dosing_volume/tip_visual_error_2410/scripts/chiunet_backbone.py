@@ -39,7 +39,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'train'  # ['train', 'inference', 'case_inference']
+mode = 'loop_inference'  # ['train', 'inference', 'case_inference']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -227,7 +227,8 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
+        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1112_1725_chiunet_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         agent.model.eval()
@@ -258,7 +259,7 @@ if __name__ == '__main__':
                     
                     mean_action = naction.mean()
                     pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                    print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
+                    # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
                 
                 loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
                 inference_losses.append(loss.item())
@@ -266,7 +267,13 @@ if __name__ == '__main__':
         loss_differences = np.array(inference_losses)
         avg_loss = np.mean(loss_differences)
         median_loss = np.median(loss_differences)
-        print(f"Test Set Median Loss: {median_loss:.4f}", f"Test Set Average Loss: {avg_loss:.4f}")
+        std_loss = np.std(loss_differences)
+        zero_ratio = np.sum(loss_differences == 0) / len(loss_differences)
+
+        print(f"Test Set Median Loss: {median_loss:.4f}")
+        print(f"Test Set Average Loss: {avg_loss:.4f}")
+        print(f"Standard Deviation of Loss: {std_loss:.4f}")
+        print(f"Proportion of Zero Losses: {zero_ratio:.4f}")
 
         plt.figure(figsize=(10, 6))
         plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
@@ -281,17 +288,73 @@ if __name__ == '__main__':
         plt.savefig(save_path + f"loss_distribution.png")
         plt.show()
                    
-    elif mode == 'case_inference':
-        # ---------------------- Case Test ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1105_1556_transformer/diffusion_ckpt_5000.pt'
-        agent.load(load_path)
-        agent.eval()
-        inference_losses = []
-        prior = torch.zeros((1, horizon, action_dim), device=device)
+    elif mode == 'loop_inference':
+        checkpoints = [str(i) for i in range(20000, 220000, 20000)]
+        checkpoints.append('latest')
 
-        with torch.no_grad():
-            for batch in tqdm(test_loader, desc="Evaluating on Test Set"):
-                nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
+        for checkpoint in checkpoints:
+            # ---------------------- Testing ----------------------
+            # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
+            load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1112_1725_chiunet_train/diffusion_ckpt_{checkpoint}.pt'
+            agent.load(load_path)
+            agent.eval()
+            agent.model.eval()
+            agent.model_ema.eval()
+
+            inference_losses = []
+            if backbone == 'transformer':
+                prior = torch.zeros((1, horizon, action_dim), device=device)
+            elif backbone == 'unet':
+                prior = torch.zeros((test_batch_size, horizon, action_dim), device=device)
+            else:
+                raise ValueError(f"Invalid backbone: {backbone}")
+
+            with torch.no_grad():
+                for batch in tqdm(test_loader):
+                    if backbone == 'transformer':
+                        nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
+                        condition = {'image': nobs}
+                        
+                        naction, _ = agent.sample(prior=prior, n_samples=1, 
+                                                sample_steps=sampling_steps, solver=solver, 
+                                                condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
+                    elif backbone == 'unet':
+                        img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
+                        condition = {'image': img}
+                        naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
+                            solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
+                        
+                        mean_action = naction.mean()
+                        pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                        # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
+                    
+                    loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
+                    inference_losses.append(loss.item())
+            
+            loss_differences = np.array(inference_losses)
+            avg_loss = np.mean(loss_differences)
+            median_loss = np.median(loss_differences)
+            std_loss = np.std(loss_differences)
+            zero_ratio = np.sum(loss_differences == 0) / len(loss_differences)
+
+            print(f"Model Checkpoint: {checkpoint}")
+            print(f"Test Set Median Loss: {median_loss:.4f}")
+            print(f"Test Set Average Loss: {avg_loss:.4f}")
+            print(f"Standard Deviation of Loss: {std_loss:.4f}")
+            print(f"Proportion of Zero Losses: {zero_ratio:.4f}")
+
+            plt.figure(figsize=(10, 6))
+            plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
+
+            sns.kdeplot(loss_differences, color='b', label="KDE Curve")
+
+            plt.title("Probability Distribution of MSE Loss Differences")
+            plt.xlabel("MSE Loss Difference")
+            plt.ylabel("Density")
+            plt.legend()
+            plt.grid()
+            plt.savefig(save_path + f"{checkpoint}_loss_distribution.png")
+            # plt.show()
     
     else:
         raise ValueError(f"Invalid mode: {mode}")
