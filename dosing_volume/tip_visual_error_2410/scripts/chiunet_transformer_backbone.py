@@ -343,13 +343,14 @@ if __name__ == '__main__':
             zero_ratio = np.sum(loss_differences == 0) / len(loss_differences)
             success_ratio = (np.sum(loss_differences == 0) + np.sum(loss_differences == 1)) / len(loss_differences)
 
-
+            print(f"Model Checkpoint: {checkpoint}")
             print(f"Test Set Median Loss: {median_loss:.4f}")
             print(f"Test Set Average Loss: {avg_loss:.4f}")
             print(f"Standard Deviation of Loss: {std_loss:.4f}")
             print(f"Proportion of Zero Losses: {zero_ratio * 100:.2f}%")
             print(f"Proportion of Successes (Zero and One Losses): {success_ratio * 100:.2f}%")
 
+            
             plt.figure(figsize=(10, 6))
             plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
 

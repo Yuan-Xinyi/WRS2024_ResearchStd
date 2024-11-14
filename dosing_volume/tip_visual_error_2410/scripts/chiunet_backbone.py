@@ -80,9 +80,6 @@ w_cg = 0.0001
 temperature = 0.5
 use_ema = False
 
-# # define the vision encoder
-# vision_encoder = get_resnet('resnet18')
-# vision_encoder = replace_bn_with_gn(vision_encoder)
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
