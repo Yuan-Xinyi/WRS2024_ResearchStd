@@ -62,7 +62,6 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
-    backbone = 'unet'
     rootpath = f'{TimeCode}_ViT_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
@@ -148,7 +147,52 @@ if __name__ == '__main__':
             
             pre_loss_tra = epoch_loss
     
-    # elif mode == 'inference':
-        
-    # else:
-    #     raise ValueError(f"Invalid mode: {mode}")
+    elif mode == 'inference':
+        checkpoints = [str(i) for i in range(100, 1100, 100)]
+        for checkpoint in checkpoints:
+            inference_losses = []
+            PATH = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1748_ViT_train/model{checkpoint}'
+            model.load_state_dict(torch.load(PATH))
+            model.to(device)
+            model.eval()  # Set the model to evaluation mode
+            test_loss = 0
+            test_accuracy = 0
+            with torch.no_grad():  # Disable gradient computation for testing
+                for data, label in tqdm(test_loader):
+                    data = data.to(device)
+                    label = label.to(device)
+
+                    output = model(data)
+                    pred_label = torch.argmax(output, dim=1)
+                    loss = F.l1_loss(pred_label.float(), label.float())
+                    inference_losses.append(loss.item())
+
+            loss_differences = np.array(inference_losses)
+            avg_loss = np.mean(loss_differences)
+            median_loss = np.median(loss_differences)
+            std_loss = np.std(loss_differences)
+            zero_ratio = np.sum(loss_differences == 0) / len(loss_differences)
+            success_ratio = (np.sum(loss_differences == 0) + np.sum(loss_differences == 1)) / len(loss_differences)
+
+
+            print(f"Test Set Median Loss: {median_loss:.4f}")
+            print(f"Test Set Average Loss: {avg_loss:.4f}")
+            print(f"Standard Deviation of Loss: {std_loss:.4f}")
+            print(f"Proportion of Zero Losses: {zero_ratio * 100:.2f}%")
+            print(f"Proportion of Successes (Zero and One Losses): {success_ratio * 100:.2f}%")
+
+            plt.figure(figsize=(10, 6))
+            plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
+
+            sns.kdeplot(loss_differences, color='b', label="KDE Curve")
+
+            plt.title("Probability Distribution of MSE Loss Differences")
+            plt.xlabel("MSE Loss Difference")
+            plt.ylabel("Density")
+            plt.legend()
+            plt.grid()
+            plt.savefig(save_path + f"{checkpoint}_loss_distribution.png")
+            exit()
+    
+    else:
+        raise ValueError(f"Invalid mode: {mode}")

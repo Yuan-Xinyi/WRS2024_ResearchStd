@@ -39,7 +39,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'transformer' # ['transformer', 'unet']
-mode = 'inference'  # ['train', 'inference', 'case_inference']
+mode = 'loop_inference'  # ['train', 'inference', 'loop_inference']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -70,7 +70,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet18' # ['resnet18', 'resnet50']
+rgb_model = 'resnet50' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
 
@@ -220,9 +220,9 @@ if __name__ == '__main__':
         # ---------------------- Testing ----------------------
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
         
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
+        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
@@ -294,8 +294,11 @@ if __name__ == '__main__':
 
         for checkpoint in checkpoints:
             # ---------------------- Testing ----------------------
-            # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
-            load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1112_1725_chiunet_train/diffusion_ckpt_{checkpoint}.pt'
+            # load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_{checkpoint}.pt'
+            # load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_{checkpoint}.pt'
+            load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_{checkpoint}.pt'
+            print(f"Loading checkpoint: {load_path}")
+            
             agent.load(load_path)
             agent.eval()
             agent.model.eval()
@@ -312,12 +315,14 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in tqdm(test_loader):
                     if backbone == 'transformer':
-                        nobs, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
-                        condition = {'image': nobs}
+                        img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
+                        condition = {'image': img}
                         
-                        naction, _ = agent.sample(prior=prior, n_samples=1, 
-                                                sample_steps=sampling_steps, solver=solver, 
-                                                condition_cfg=condition, w_cfg=1.0, use_ema=use_ema)   # (env_num, 64, 12)
+                        naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
+                            solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)   
+                        mean_action = naction.mean()
+                        pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                        
                     elif backbone == 'unet':
                         img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
                         condition = {'image': img}
@@ -336,12 +341,14 @@ if __name__ == '__main__':
             median_loss = np.median(loss_differences)
             std_loss = np.std(loss_differences)
             zero_ratio = np.sum(loss_differences == 0) / len(loss_differences)
+            success_ratio = (np.sum(loss_differences == 0) + np.sum(loss_differences == 1)) / len(loss_differences)
 
-            print(f"Model Checkpoint: {checkpoint}")
+
             print(f"Test Set Median Loss: {median_loss:.4f}")
             print(f"Test Set Average Loss: {avg_loss:.4f}")
             print(f"Standard Deviation of Loss: {std_loss:.4f}")
-            print(f"Proportion of Zero Losses: {zero_ratio:.4f}")
+            print(f"Proportion of Zero Losses: {zero_ratio * 100:.2f}%")
+            print(f"Proportion of Successes (Zero and One Losses): {success_ratio * 100:.2f}%")
 
             plt.figure(figsize=(10, 6))
             plt.hist(loss_differences, bins=20, density=True, alpha=0.6, color='g', label="Histogram")
