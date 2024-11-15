@@ -19,10 +19,12 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from linformer import Linformer
 
 '''cleandiffuser imports'''
 from datetime import datetime
 from cleandiffuser.nn_condition import MultiImageObsCondition, EarlyConvViTMultiViewImageCondition
+from cleandiffuser.nn_condition import ViTImageCondition
 from cleandiffuser.nn_diffusion import ChiTransformer, ChiUNet1d
 from cleandiffuser.utils import report_parameters
 from cleandiffuser.diffusion.ddpm import DDPM
@@ -38,7 +40,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet', 'vit']
 mode = 'train'  # ['train', 'inference', 'loop_inference']
-condition_encoder = 'cnn_vit' # ['multi_image_obs', 'cnn_vit']
+condition_encoder = 'vit' # ['multi_image_obs', 'cnn_vit', 'vit']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -127,6 +129,14 @@ if __name__ == '__main__':
     elif condition_encoder == 'cnn_vit':
         nn_condition = EarlyConvViTMultiViewImageCondition(image_sz=(120,), in_channels=(3,), To=obs_steps, 
                                                            d_model=256, nhead=8, num_layers=12, patch_size=(16,)).to(device)
+    elif condition_encoder == 'vit':
+        dim, image_size, patch_size, channels = 256, (120, 120), 10, 3
+        efficient_transformer = Linformer(
+            dim=dim, seq_len=int(np.prod(image_size) / (patch_size ** 2)) + 1,  # mxn patches + 1 cls-token
+            depth=12, heads=8, k=64
+        )
+        nn_condition = ViTImageCondition(image_size=image_size, patch_size=patch_size, dim=dim, 
+                                         transformer=efficient_transformer, channels=channels).to(device)
     else:
         raise ValueError(f"Invalid condition encoder: {condition_encoder}")
 
@@ -166,10 +176,16 @@ if __name__ == '__main__':
 
         for batch in loop_dataloader(train_loader):
             img, action = batch[0].to(device).float(), batch[1].to(device).float()
-            img_condition = reshape_condition(img, t = obs_steps)
+            
+            if condition_encoder == 'cnn_vit':
+                img = reshape_condition(img, t = obs_steps)
+                # print('Remark: we adjust the shape of conditional image for CNN-ViT')
             
             # process the image into observation
-            condition = {'image': img_condition}
+            if condition_encoder == 'vit':
+                condition = img
+            else:
+                condition = {'image': img}
             
             # Normalize the label
             naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
