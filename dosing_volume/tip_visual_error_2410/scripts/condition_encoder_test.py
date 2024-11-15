@@ -8,6 +8,7 @@ sys.path.append(project_root)
 from torch.utils.data import DataLoader
 import utils.arrays as arrays
 from utils.utils import seed_everything, device_check, uniform_normalize_label, uniform_unnormalize_label
+from utils.utils import reshape_condition
 from utils.dataset import TipsDataset, load_data
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import torch
@@ -21,7 +22,7 @@ import seaborn as sns
 
 '''cleandiffuser imports'''
 from datetime import datetime
-from cleandiffuser.nn_condition import MultiImageObsCondition
+from cleandiffuser.nn_condition import MultiImageObsCondition, EarlyConvViTMultiViewImageCondition
 from cleandiffuser.nn_diffusion import ChiTransformer, ChiUNet1d
 from cleandiffuser.utils import report_parameters
 from cleandiffuser.diffusion.ddpm import DDPM
@@ -37,6 +38,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet', 'vit']
 mode = 'train'  # ['train', 'inference', 'loop_inference']
+condition_encoder = 'cnn_vit' # ['multi_image_obs', 'cnn_vit']
 train_batch_size = 16
 test_batch_size = 1
 solver = 'ddpm'
@@ -75,13 +77,13 @@ sampling_steps = 10
 w_cg = 0.0001
 temperature = 0.5
 use_ema = False
-img_encoder = 'vit'
+rgb_model = 'resnet50' # ['resnet18', 'resnet50']
 
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
-    rootpath = f'{TimeCode}_{backbone}_h{horizon}_{img_encoder}_{mode}'
+    rootpath = f'{TimeCode}_{backbone}_h{horizon}_{condition_encoder}_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
@@ -119,8 +121,14 @@ if __name__ == '__main__':
 
 
     # dropout=0.0 to use no CFG but serve as FiLM encoder
-    nn_condition = MultiImageObsCondition(shape_meta=shape_meta, emb_dim=256, rgb_model_name=rgb_model, 
+    if condition_encoder == 'multi_image_obs':
+        nn_condition = MultiImageObsCondition(shape_meta=shape_meta, emb_dim=256, rgb_model_name=rgb_model, 
                                           use_group_norm=use_group_norm).to(device)
+    elif condition_encoder == 'cnn_vit':
+        nn_condition = EarlyConvViTMultiViewImageCondition(image_sz=(120,), in_channels=(3,), To=obs_steps, 
+                                                           d_model=256, nhead=8, num_layers=12, patch_size=(16,)).to(device)
+    else:
+        raise ValueError(f"Invalid condition encoder: {condition_encoder}")
 
     if backbone == 'transformer':
         nn_diffusion = ChiTransformer(
@@ -157,31 +165,18 @@ if __name__ == '__main__':
 
 
         for batch in loop_dataloader(train_loader):
-            if backbone == 'transformer': 
-                img, action = batch[0].to(device).float(), batch[1].to(device).float()
-                
-                # process the image into observation
-                condition = {'image': img}
-                
-                # Normalize the label
-                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-                naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
-
-                diffusion_loss = agent.update(naction, condition)['loss']
+            img, action = batch[0].to(device).float(), batch[1].to(device).float()
+            img_condition = reshape_condition(img, t = obs_steps)
             
-            elif backbone == 'unet':
-                img, action = batch[0].to(device).float(), batch[1].to(device).float()
-                
-                # process the image into observation
-                condition = {'image': img}
-                
-                # Normalize the label
-                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-                naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+            # process the image into observation
+            condition = {'image': img_condition}
+            
+            # Normalize the label
+            naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
+            naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+            naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
 
-                diffusion_loss = agent.update(naction, condition)['loss']
+            diffusion_loss = agent.update(naction, condition)['loss']
 
             log['avg_loss_diffusion'] += diffusion_loss  # BaseDiffusionSDE.update
             # print(f'[t={n_gradient_step + 1}] diffusion loss = {current_loss}')
@@ -231,23 +226,13 @@ if __name__ == '__main__':
 
         with torch.no_grad():
             for batch in tqdm(test_loader):
-                if backbone == 'transformer':
-                    img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
-                    condition = {'image': img}
-                    
-                    naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
-                        solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)   
-                    mean_action = naction.mean()
-                    pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                    
-                elif backbone == 'unet':
-                    img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
-                    condition = {'image': img}
-                    naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
-                        solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
-                    
-                    mean_action = naction.mean()
-                    pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
+                condition = {'image': img}
+                naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
+                    solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
+                
+                mean_action = naction.mean()
+                pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
                     # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
                 
                 loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
@@ -306,24 +291,14 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 for batch in tqdm(test_loader):
-                    if backbone == 'transformer':
-                        img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
-                        condition = {'image': img}
-                        
-                        naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
-                            solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)   
-                        mean_action = naction.mean()
-                        pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                        
-                    elif backbone == 'unet':
-                        img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
-                        condition = {'image': img}
-                        naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
-                            solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
-                        
-                        mean_action = naction.mean()
-                        pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                        # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
+                    img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
+                    condition = {'image': img}
+                    naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
+                        solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
+                    
+                    mean_action = naction.mean()
+                    pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                    # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
                     
                     loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
                     inference_losses.append(loss.item())

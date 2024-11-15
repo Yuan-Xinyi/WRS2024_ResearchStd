@@ -109,3 +109,16 @@ def unMinMaxNormalize(X, min_vals, range_vals):
     unnormalized_data = X * range_vals + min_vals  # Reverse min-max scaling
     
     return unnormalized_data
+
+def reshape_condition(img, view=1, t=1):
+    """
+    Reshape the input image tensor to the desired shape.
+    Args:
+        img (torch.Tensor): The input image tensor of shape (batch, 3, 120, 120).
+        view (int): The number of views (default is 1).
+        t (int): The number of frames per view (default is 1).
+    Returns:
+        torch.Tensor: The reshaped image tensor of shape (batch, view, time, 3, 120, 120).
+    """
+    batch_size, channels, height, width = img.shape
+    return img.view(batch_size, view, t, channels, height, width)
