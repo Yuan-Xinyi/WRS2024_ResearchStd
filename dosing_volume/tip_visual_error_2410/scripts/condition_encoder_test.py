@@ -39,9 +39,9 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet', 'vit']
-mode = 'train'  # ['train', 'inference', 'loop_inference']
+mode = 'inference'  # ['train', 'inference', 'loop_inference']
 condition_encoder = 'vit' # ['multi_image_obs', 'cnn_vit', 'vit']
-train_batch_size = 16
+train_batch_size = 256
 test_batch_size = 1
 solver = 'ddpm'
 diffusion_steps = 20
@@ -85,7 +85,7 @@ rgb_model = 'resnet50' # ['resnet18', 'resnet50']
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
-    rootpath = f'{TimeCode}_{backbone}_h{horizon}_{condition_encoder}_{mode}'
+    rootpath = f'{TimeCode}_{backbone}_b{train_batch_size}_h{horizon}_{condition_encoder}_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
@@ -221,12 +221,9 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
-        
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
-
+        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1608_unet_h4_cnn_vit_train/diffusion_ckpt_latest.pt'
+        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1739_unet_h4_vit_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1118_1427_unet_b256_h4_vit_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         agent.model.eval()
@@ -243,13 +240,22 @@ if __name__ == '__main__':
         with torch.no_grad():
             for batch in tqdm(test_loader):
                 img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
-                condition = {'image': img}
+                if condition_encoder == 'cnn_vit':
+                    img = reshape_condition(img, t = obs_steps)
+                    # print('Remark: we adjust the shape of conditional image for CNN-ViT')
+                
+                # process the image into observation
+                if condition_encoder == 'vit':
+                    condition = img
+                else:
+                    condition = {'image': img}
+
                 naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
                     solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
                 
                 mean_action = naction.mean()
                 pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                    # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
+                # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
                 
                 loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
                 inference_losses.append(loss.item())
@@ -287,9 +293,8 @@ if __name__ == '__main__':
 
         for checkpoint in checkpoints:
             # ---------------------- Testing ----------------------
-            # load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_{checkpoint}.pt'
-            # load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_{checkpoint}.pt'
-            load_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_{checkpoint}.pt'
+            load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1608_unet_h4_cnn_vit_train/diffusion_ckpt_latest.pt'
+            # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1739_unet_h4_vit_train/diffusion_ckpt_latest.pt'
             print(f"Loading checkpoint: {load_path}")
             
             agent.load(load_path)
@@ -308,7 +313,16 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in tqdm(test_loader):
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()
-                    condition = {'image': img}
+                    if condition_encoder == 'cnn_vit':
+                        img = reshape_condition(img, t = obs_steps)
+                        # print('Remark: we adjust the shape of conditional image for CNN-ViT')
+                    
+                    # process the image into observation
+                    if condition_encoder == 'vit':
+                        condition = img
+                    else:
+                        condition = {'image': img}
+
                     naction, _ = agent.sample(prior=prior, n_samples=1, sample_steps=sampling_steps,
                         solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
                     

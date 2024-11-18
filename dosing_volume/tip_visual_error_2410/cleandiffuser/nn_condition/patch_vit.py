@@ -25,7 +25,7 @@ class ViTImageCondition(nn.Module):
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))
         self.transformer = transformer
 
-    def forward(self, img):
+    def forward(self, img, *args, **kwargs):
         x = self.to_patch_embedding(img)
         x += self.pos_embedding[:, :x.shape[1]]
         x = self.transformer(x)
