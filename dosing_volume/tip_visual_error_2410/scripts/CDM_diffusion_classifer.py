@@ -38,7 +38,7 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 
 if __name__ == '__main__':
-    config = yaml.load(open("./config/config.yaml", "r"), Loader=yaml.FullLoader)
+    config = yaml.load(open("dosing_volume/tip_visual_error_2410/CDM/config/config.yaml", "r"), Loader=yaml.FullLoader)
 
     #general config
     mode = config['general']['mode']
@@ -137,7 +137,8 @@ if __name__ == '__main__':
                 ce_factor=ce_factor, mse_factor=mse_factor, num_classes=num_classes_cond, num_sampling_steps=num_sampling_steps, beta_start=beta_start, beta_end=beta_end)
   
     if mode == 'training':
-        cdm.simple_train(train_loader=train_loader, save_ckpt_freq=save_ckpt_freq, num_iterations=num_iterations, sampler=sampler)
+        cdm.simple_train(train_loader=train_loader, save_path = save_path, save_ckpt_freq=save_ckpt_freq, 
+                         num_iterations=num_iterations, sampler=sampler)
         accelerator.end_training()
     
     else:

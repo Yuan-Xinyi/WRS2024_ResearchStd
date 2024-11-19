@@ -12,7 +12,7 @@ from torchvision.utils import make_grid
 from accelerate.utils import set_seed
 from tqdm import tqdm
 from datetime import datetime
-from modules import EMA
+from CDM.modules import EMA
 
 
 class CDM:
@@ -269,11 +269,11 @@ class CDM:
                                     'loss': total_mse_loss,
                                     }, os.path.join(ckpt_folder, self.display_name + f'_epoch{epoch}')) 
                     
-    def simple_train(self, train_loader, save_ckpt_freq=50, num_iterations=None, sampler='ddim'):
+    def simple_train(self, train_loader, save_path, save_ckpt_freq=50, num_iterations=None, sampler='ddim'):
         set_seed(38, device_specific=True)
-        if self.accelerator.is_main_process:
-            ckpt_folder = str(datetime.now())
-            os.mkdir(ckpt_folder)
+        # if self.accelerator.is_main_process:
+        #     ckpt_folder = str(datetime.now())
+        #     os.mkdir(ckpt_folder)
         
         lr_lambda = lambda step: (  min((step + 1) / (5000*self.accelerator.num_processes), 1)   # Warm up
                         * 0.1 ** (step // (200000*self.accelerator.num_processes))  # Step decay
@@ -294,6 +294,8 @@ class CDM:
 
             pbar = tqdm(train_loader, disable=not self.accelerator.is_main_process)
             for images, labels in pbar:
+                # images shape = [16,3,120,120], labels shape = [16]
+                images, labels = images.to(self.device), labels.to(self.device)
                 image_shape = images.shape[2]
 
                 t = self.sample_timesteps(images.shape[0]) 
@@ -357,18 +359,8 @@ class CDM:
                                     'ema_model_state_dict': self.accelerator.unwrap_model(self.ema_model.state_dict()),
                                     'optimizer_state_dict': self.accelerator.unwrap_model(self.optimizer.state_dict()),
                                     'loss': total_mse_loss,
-                                    }, os.path.join(ckpt_folder, self.display_name + '_last_epoch'))
-        
-
-            if self.accelerator.is_main_process:
-                if (epoch + 1) % save_ckpt_freq == 0:
-                    torch.save({
-                                    'epoch': epoch,
-                                    'model_state_dict': self.accelerator.unwrap_model(self.model.state_dict()),
-                                    'ema_model_state_dict': self.accelerator.unwrap_model(self.ema_model.state_dict()),
-                                    'optimizer_state_dict': self.accelerator.unwrap_model(self.optimizer.state_dict()),
-                                    'loss': total_mse_loss,
-                                    }, os.path.join(ckpt_folder, self.display_name + f'_epoch{epoch}')) 
+                                    }, os.path.join(save_path, f"diffusion_ckpt_{epoch}.pt"))
+                
     
     def FM_train(self, train_dataset, val_dataset, save_ckpt_freq=50, sample_val_images=10, num_iterations=None):
         set_seed(38, device_specific=True)
