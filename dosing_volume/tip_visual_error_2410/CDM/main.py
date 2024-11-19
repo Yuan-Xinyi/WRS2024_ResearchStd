@@ -21,8 +21,8 @@ def main():
 
     #general config
     mode = config['general']['mode']
-    dataset = config['general']['dataset']
-    dataset_path = config['general']['dataset_path']
+    # dataset = config['general']['dataset']
+    # dataset_path = config['general']['dataset_path']
     model_arch = config['general']['model_arch']
     num_classes_cond = config['general']['num_classes_cond']  
     if num_classes_cond is not None:

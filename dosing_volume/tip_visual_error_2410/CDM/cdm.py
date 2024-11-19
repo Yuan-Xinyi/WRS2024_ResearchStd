@@ -268,6 +268,107 @@ class CDM:
                                     'optimizer_state_dict': self.accelerator.unwrap_model(self.optimizer.state_dict()),
                                     'loss': total_mse_loss,
                                     }, os.path.join(ckpt_folder, self.display_name + f'_epoch{epoch}')) 
+                    
+    def simple_train(self, train_loader, save_ckpt_freq=50, num_iterations=None, sampler='ddim'):
+        set_seed(38, device_specific=True)
+        if self.accelerator.is_main_process:
+            ckpt_folder = str(datetime.now())
+            os.mkdir(ckpt_folder)
+        
+        lr_lambda = lambda step: (  min((step + 1) / (5000*self.accelerator.num_processes), 1)   # Warm up
+                        * 0.1 ** (step // (200000*self.accelerator.num_processes))  # Step decay
+                        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+
+        num_iters = 0 
+        num_epochs = int((num_iterations/len(train_loader))*self.accelerator.num_processes) + 1 
+
+        for epoch in range(num_epochs):
+            
+            self.model.train()
+
+            total_images = 0
+            total_batches = 0
+            total_mse_loss = 0 
+            total_ce_loss = 0
+
+            pbar = tqdm(train_loader, disable=not self.accelerator.is_main_process)
+            for images, labels in pbar:
+                image_shape = images.shape[2]
+
+                t = self.sample_timesteps(images.shape[0]) 
+                sigma = torch.sqrt(1-self.alpha_hat[t])[:, None, None, None]
+
+                x_t, noise = self.noise_images(images, t)
+                x_t.requires_grad = True
+                if self.cond_model:
+                    outputs = self.model(x_t, y=labels)
+                else:
+                    outputs = self.model(x_t)
+                outputs = torch.cumsum(outputs, dim=1)
+
+                y = torch.sum(outputs[:,-1] - torch.diag(outputs[:,t]))
+                
+                ce_loss = self.ce(outputs, t)
+
+                if self.mse_factor != 0:
+                    x_grad = torch.autograd.grad(y, x_t, create_graph=True)[0]
+                else:
+                    x_grad = 0 
+                
+                eps = sigma * (x_grad + x_t)
+                mse_loss_noise = self.mse(eps, noise)  
+                
+
+                if self.mse_factor == 0:
+                    loss = ce_loss 
+                else:
+                    loss = self.ce_factor * ce_loss + self.mse_factor * mse_loss_noise
+
+                self.optimizer.zero_grad()
+                self.accelerator.backward(loss)
+                self.optimizer.step()
+                scheduler.step()
+
+                self.accelerator.log({'step': num_iters, 'lr': self.optimizer.param_groups[0]['lr']})
+                pbar.set_postfix(loss=mse_loss_noise.item())
+
+                self.ema.step_ema(self.ema_model, self.model, step_start_ema=5000)
+                
+
+                total_images += self.accelerator.gather(torch.tensor([t.size(0)]).to(self.device)).sum().item()
+                total_batches += 1
+
+                total_mse_loss += self.accelerator.gather(mse_loss_noise * t.size(0)).sum().item()
+                total_ce_loss += self.accelerator.gather(ce_loss).sum().item()
+    
+                num_iters += 1
+                
+            total_mse_loss = total_mse_loss / total_images 
+            total_ce_loss = total_ce_loss / (total_batches * self.accelerator.num_processes)
+
+            self.accelerator.log({'Training MSE loss': total_mse_loss})
+            self.accelerator.log({'Training cross-entropy loss': total_ce_loss})
+            
+            if self.accelerator.is_main_process:
+                torch.save({
+                                    'epoch': epoch,
+                                    'model_state_dict': self.accelerator.unwrap_model(self.model.state_dict()),
+                                    'ema_model_state_dict': self.accelerator.unwrap_model(self.ema_model.state_dict()),
+                                    'optimizer_state_dict': self.accelerator.unwrap_model(self.optimizer.state_dict()),
+                                    'loss': total_mse_loss,
+                                    }, os.path.join(ckpt_folder, self.display_name + '_last_epoch'))
+        
+
+            if self.accelerator.is_main_process:
+                if (epoch + 1) % save_ckpt_freq == 0:
+                    torch.save({
+                                    'epoch': epoch,
+                                    'model_state_dict': self.accelerator.unwrap_model(self.model.state_dict()),
+                                    'ema_model_state_dict': self.accelerator.unwrap_model(self.ema_model.state_dict()),
+                                    'optimizer_state_dict': self.accelerator.unwrap_model(self.optimizer.state_dict()),
+                                    'loss': total_mse_loss,
+                                    }, os.path.join(ckpt_folder, self.display_name + f'_epoch{epoch}')) 
     
     def FM_train(self, train_dataset, val_dataset, save_ckpt_freq=50, sample_val_images=10, num_iterations=None):
         set_seed(38, device_specific=True)
