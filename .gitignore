@@ -2,5 +2,6 @@
 /.idea/
 *.pyc
 **/data/
+**/datasets/
 **/results/
 **/wandb/

@@ -38,12 +38,12 @@ seed = 0
 dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
-backbone = 'transformer' # ['transformer', 'unet']
-mode = 'loop_inference'  # ['train', 'inference', 'loop_inference']
-train_batch_size = 16
+backbone = 'unet' # ['transformer', 'unet']
+mode = 'inference'  # ['train', 'inference', 'loop_inference']
+train_batch_size = 64
 test_batch_size = 1
 solver = 'ddpm'
-diffusion_steps = 20
+diffusion_steps = 10
 predict_noise = False # [True, False]
 obs_steps = 1
 action_steps = 1
@@ -70,7 +70,7 @@ shape_meta = {
         }
     }
 }
-rgb_model = 'resnet50' # ['resnet18', 'resnet50']
+rgb_model = 'resnet18' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
 
@@ -84,7 +84,7 @@ use_ema = False
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
     TimeCode = ((datetime.now()).strftime("%m%d_%H%M")).replace(" ", "")
-    rootpath = f'{TimeCode}_{backbone}_{horizon}_{rgb_model}_{mode}'
+    rootpath = f'{TimeCode}_{backbone}_h{horizon}_{rgb_model}_steps{diffusion_steps}_{mode}'
     save_path = f'dosing_volume/tip_visual_error_2410/results/diffuser/{rootpath}/'
     if os.path.exists(save_path) is False:
         os.makedirs(save_path)
@@ -222,7 +222,7 @@ if __name__ == '__main__':
         
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1643_transformer_4_resnet50_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1119_1415_unet_h4_resnet18_steps10_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
