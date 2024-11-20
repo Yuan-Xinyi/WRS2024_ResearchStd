@@ -44,7 +44,7 @@ from linformer import Linformer
 '''preparations'''
 device_check()
 seed = 0
-mode = 'train' # 'train' or 'inference'
+mode = 'inference' # 'train' or 'inference'
 train_batch_size = 256
 test_batch_size = 1
 
@@ -158,13 +158,15 @@ if __name__ == '__main__':
             test_loss = 0
             test_accuracy = 0
             with torch.no_grad():  # Disable gradient computation for testing
-                for data, label in tqdm(test_loader):
+                for data, label in (test_loader):
                     data = data.to(device)
                     label = label.to(device)
 
                     output = model(data)
                     pred_label = torch.argmax(output, dim=1)
                     loss = F.l1_loss(pred_label.float(), label.float())
+                    if loss.item() > 0:
+                        print('gth label: ',label.item(),'pred_label:', pred_label.item())
                     inference_losses.append(loss.item())
 
             loss_differences = np.array(inference_losses)

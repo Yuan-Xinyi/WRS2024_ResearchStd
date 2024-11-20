@@ -48,7 +48,7 @@ predict_noise = False # [True, False]
 obs_steps = 1
 action_steps = 1
 num_classes = 61
-action_scale = 1.0
+action_scale = 60.0
 action_loss_weight = 1.0
 
 # Training
@@ -121,8 +121,12 @@ if __name__ == '__main__':
         x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale  # （1，1，1）
         x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale  # （1，1，1）
     elif backbone == 'unet':
-        x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
-        x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale
+        if action_scale == 60.0:
+            x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
+            x_min = torch.zeros((1, horizon, action_dim), device=device)
+        else:
+            x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
+            x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale
     else:
         raise ValueError(f"Invalid backbone: {backbone}")
 
@@ -185,9 +189,13 @@ if __name__ == '__main__':
                 condition = {'image': img}
                 
                 # Normalize the label
-                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-                naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-                naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+                if action_scale == 60.0:
+                    action = action.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                    naction = action.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+                else:
+                    naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
+                    naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                    naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
 
                 diffusion_loss = agent.update(naction, condition)['loss']
 
@@ -222,7 +230,7 @@ if __name__ == '__main__':
         
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1119_1415_unet_h4_resnet18_steps10_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1120_1438_unet_h4_resnet18_steps10_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
@@ -238,7 +246,7 @@ if __name__ == '__main__':
             raise ValueError(f"Invalid backbone: {backbone}")
 
         with torch.no_grad():
-            for batch in tqdm(test_loader):
+            for batch in (test_loader):
                 if backbone == 'transformer':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                     condition = {'image': img}
@@ -255,8 +263,12 @@ if __name__ == '__main__':
                         solver=solver, condition_cfg=condition, w_cfg=1.0, use_ema=True)                    
                     
                     mean_action = naction.mean()
-                    pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
-                    # print('gth_label:', gth_label.item(),'pred_label: ',pred_label)
+                    if action_scale == 60.0:
+                        pred_label = torch.round(mean_action)
+                    else:
+                        pred_label = uniform_unnormalize_label(mean_action, num_classes=num_classes, scale=action_scale) 
+                    if gth_label.item() != pred_label:
+                        print('gth_label:', gth_label.item(),'raw action', mean_action.item(), 'pred_label: ', pred_label.item())
                 
                 loss = F.l1_loss(torch.tensor([pred_label], device=device), gth_label)
                 inference_losses.append(loss.item())
