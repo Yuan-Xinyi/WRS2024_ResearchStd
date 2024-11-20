@@ -361,7 +361,38 @@ class CDM:
                                     'loss': total_mse_loss,
                                     }, os.path.join(save_path, f"diffusion_ckpt_{epoch}.pt"))
                 
-    
+
+    def labeling(self, test_loader, labels=None, validation=False):
+        # ----------------- wrong, need to fix -----------------
+        if not validation:
+            ckpt = torch.load(os.path.join('.', self.ckpt_folder, self.ckpt_file), map_location=self.device)['ema_model_state_dict']
+            self.model.load_state_dict({k.replace("module.", ""): v for k, v in ckpt.items()})
+            self.model.eval()
+
+        if validation:
+            self.ema_model.eval()
+        # Ensure the model is in evaluation mode
+        self.model.eval()
+        
+        predictions = []  # To store predictions for all test samples
+
+        with torch.no_grad():  # Disable gradient computation for testing
+            for images, labels in test_loader:
+                images = images.to(self.device)
+
+                # If using a conditional model and test labels are needed
+                if self.cond_model:
+                    labels = labels.to(self.device)
+                    outputs = self.model(images, y=labels)
+                else:
+                    outputs = self.model(images)
+
+                # Convert model outputs to predictions (e.g., argmax for classification)
+                batch_predictions = torch.argmax(outputs, dim=1)  # Example for classification tasks
+                predictions.extend(batch_predictions.cpu().numpy())  # Convert to numpy and store results
+
+        return predictions
+
     def FM_train(self, train_dataset, val_dataset, save_ckpt_freq=50, sample_val_images=10, num_iterations=None):
         set_seed(38, device_specific=True)
         if self.accelerator.is_main_process:

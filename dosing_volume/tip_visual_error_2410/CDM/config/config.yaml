@@ -1,5 +1,5 @@
 general:  
-  mode: 'sampling' #training/FM_training/sampling/FM_sampling/likelihood_eval
+  mode: 'sampling' #training/sampling/labeling
   model_arch: 'ddpm_unet_small' #ddpm_unet_small (for CIFAR10)/ ddpm_unet_large (for celebA_64)
   num_classes_cond: #Number of classes in class conditional model. If None, the model is unconditional
   beta_start: 0.0001 
@@ -27,6 +27,6 @@ sampling:
   image_shape: 120 
   sampler: 'ddpm' #ddpm/ddim/second_order_dpm_solver
   num_sampling_steps: 1000
-  labels:  # The label of the generated class, relevant only for conditional models
+  labels: 0 # The label of the generated class, relevant only for conditional models
   w_cfg:   # Classifier free guidance scale 
 

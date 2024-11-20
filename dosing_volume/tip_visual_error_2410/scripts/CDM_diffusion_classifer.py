@@ -105,7 +105,7 @@ if __name__ == '__main__':
     # Create data loaders
     train_loader = DataLoader(dataset = train_data, batch_size = batch_size, shuffle = True,
                               num_workers=4, pin_memory=True, persistent_workers=True)
-    test_loader = DataLoader(dataset = test_data, batch_size = batch_size, shuffle = False,
+    test_loader = DataLoader(dataset = test_data, batch_size = 1, shuffle = False,
                               num_workers=4, pin_memory=True, persistent_workers=True)
 
     obs_dim = 256
@@ -150,6 +150,13 @@ if __name__ == '__main__':
                                   w_cfg=w_cfg, sampler=sampler, validation=False)
         plot_images(sampled_imgs, folder = save_path, figsize=(40,4))
     
+    elif mode == 'labeling':
+        if num_classes_cond is not None and labels is not None:
+            labels = torch.tensor([labels] * num_samples).to(accelerator.device)
+        else:
+            labels = None
+        labels = cdm.labeling(test_loader)
+
     else:
         raise ValueError(f"Invalid mode: {mode}")
     
