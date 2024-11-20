@@ -1,5 +1,5 @@
 general:  
-  mode: 'training' #training/FM_training/sampling/FM_sampling/likelihood_eval
+  mode: 'sampling' #training/FM_training/sampling/FM_sampling/likelihood_eval
   model_arch: 'ddpm_unet_small' #ddpm_unet_small (for CIFAR10)/ ddpm_unet_large (for celebA_64)
   num_classes_cond: #Number of classes in class conditional model. If None, the model is unconditional
   beta_start: 0.0001 
@@ -21,10 +21,10 @@ training:
   
 
 sampling:
-  ckpt_folder: "/path/to/ckpt"
-  ckpt_file: "/path/to/ckpt"
+  ckpt_folder: "dosing_volume/tip_visual_error_2410/results/diffuser/1119_1702_ddpm_unet_small_h4_CDM_steps1000_training"
+  ckpt_file: "diffusion_ckpt_105.pt"
   num_samples: 10
-  image_shape: 32 
+  image_shape: 120 
   sampler: 'ddpm' #ddpm/ddim/second_order_dpm_solver
   num_sampling_steps: 1000
   labels:  # The label of the generated class, relevant only for conditional models

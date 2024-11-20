@@ -140,6 +140,15 @@ if __name__ == '__main__':
         cdm.simple_train(train_loader=train_loader, save_path = save_path, save_ckpt_freq=save_ckpt_freq, 
                          num_iterations=num_iterations, sampler=sampler)
         accelerator.end_training()
+
+    elif mode == 'sampling':
+        if num_classes_cond is not None and labels is not None:
+            labels = torch.tensor([labels] * num_samples).to(accelerator.device)
+        else:
+            labels = None
+        sampled_imgs = cdm.sample(num_samples=num_samples, image_shape=image_shape, labels=labels, 
+                                  w_cfg=w_cfg, sampler=sampler, validation=False)
+        plot_images(sampled_imgs, folder = save_path, figsize=(40,4))
     
     else:
         raise ValueError(f"Invalid mode: {mode}")
