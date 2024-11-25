@@ -39,16 +39,16 @@ dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
 backbone = 'unet' # ['transformer', 'unet', 'vit']
-mode = 'inference'  # ['train', 'inference', 'loop_inference']
+mode = 'train'  # ['train', 'inference', 'loop_inference']
 condition_encoder = 'vit' # ['multi_image_obs', 'cnn_vit', 'vit']
-train_batch_size = 256
+train_batch_size = 64
 test_batch_size = 1
 solver = 'ddpm'
 diffusion_steps = 20
 obs_steps = 1
 action_steps = 1
 num_classes = 61
-action_scale = 1.0
+action_scale = 60.0
 action_loss_weight = 1.0
 
 # Training
@@ -79,7 +79,7 @@ sampling_steps = 10
 w_cg = 0.0001
 temperature = 0.5
 use_ema = False
-rgb_model = 'resnet50' # ['resnet18', 'resnet50']
+rgb_model = 'resnet18' # ['resnet18', 'resnet50']
 
 
 if __name__ == '__main__':
@@ -118,8 +118,12 @@ if __name__ == '__main__':
 
     # --------------- Network Architecture -----------------
     '''x max and x min'''
-    x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
-    x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale
+    if action_scale == 60.0:
+        x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
+        x_min = torch.zeros((1, horizon, action_dim), device=device)
+    else:
+        x_max = torch.ones((1, horizon, action_dim), device=device) * +action_scale
+        x_min = torch.ones((1, horizon, action_dim), device=device) * -action_scale
 
 
     # dropout=0.0 to use no CFG but serve as FiLM encoder
@@ -133,8 +137,7 @@ if __name__ == '__main__':
         dim, image_size, patch_size, channels = 256, (120, 120), 10, 3
         efficient_transformer = Linformer(
             dim=dim, seq_len=int(np.prod(image_size) / (patch_size ** 2)) + 1,  # mxn patches + 1 cls-token
-            depth=12, heads=8, k=64
-        )
+            depth=12, heads=8, k=64)
         nn_condition = ViTImageCondition(image_size=image_size, patch_size=patch_size, dim=dim, 
                                          transformer=efficient_transformer, channels=channels).to(device)
     else:
@@ -188,9 +191,13 @@ if __name__ == '__main__':
                 condition = {'image': img}
             
             # Normalize the label
-            naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
-            naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
-            naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+            if action_scale == 60.0:
+                action = action.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                naction = action.expand(-1, horizon, -1)  # (batch, expand dim, 1)
+            else:
+                naction = uniform_normalize_label(action, num_classes=num_classes, scale=action_scale)
+                naction = naction.unsqueeze(1).unsqueeze(2) # (batch, 1)
+                naction = naction.expand(-1, horizon, -1)  # (batch, expand dim, 1)
 
             diffusion_loss = agent.update(naction, condition)['loss']
 
