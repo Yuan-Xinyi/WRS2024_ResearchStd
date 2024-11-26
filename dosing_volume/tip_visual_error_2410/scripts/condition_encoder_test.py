@@ -34,10 +34,13 @@ from cleandiffuser.dataset.dataset_utils import loop_dataloader
 device_check()
 seed = 0
 # seed_everything(1)
+'''dataset dir list'''
 # dataset_dir_RIKEN = "dosing_volume/tip_visual_error_2410/data/RIKEN_yokohama_tip_D405/img_2/"
-dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
+# dataset_dir = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/data/spiral_t_hex/'
+# dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
+dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet', 'vit']
 mode = 'inference'  # ['train', 'inference', 'loop_inference']
 condition_encoder = 'cnn_vit' # ['multi_image_obs', 'cnn_vit', 'vit']
@@ -62,14 +65,26 @@ num_epochs = 1000
 action_dim = 1
 horizon = 4
 obs_steps = 1
-shape_meta = {
-    'obs': {
-        'image': {
-            'shape': (3, 120, 120),   # (channels, height, width) for image inputs
-            'type': 'rgb'           # 'rgb'
+if dataset_name == 'spiral_visual_error_diffusion':
+    shape_meta = {
+        'obs': {
+            'image': {
+                'shape': (3, 45, 80),   # (channels, height, width) for image inputs
+                'type': 'rgb'           # 'rgb'
+            }
         }
     }
-}
+elif dataset_name == 'visual_error_diffusion':
+    shape_meta = {
+        'obs': {
+            'image': {
+                'shape': (3, 120, 120),   # (channels, height, width) for image inputs
+                'type': 'rgb'           # 'rgb'
+            }
+        }
+    }
+else:
+    raise ValueError(f"Invalid dataset name: {dataset_name}")
 
 use_group_norm = True
 ema_rate = 0.9999
@@ -99,8 +114,8 @@ if __name__ == '__main__':
     # exit() # exit after saving the dataset
 
     '''load the dataset from npy file'''
-    train_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_training.npy', allow_pickle=True)
-    test_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_testing.npy', allow_pickle=True)
+    train_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_training.npy', allow_pickle=True)
+    test_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_testing.npy', allow_pickle=True)
 
     train_list = train_data.tolist()
     test_list = test_data.tolist()

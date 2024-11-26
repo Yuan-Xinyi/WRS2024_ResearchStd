@@ -34,16 +34,19 @@ from cleandiffuser.dataset.dataset_utils import loop_dataloader
 device_check()
 seed = 0
 # seed_everything(1)
+'''dataset dir list'''
 # dataset_dir_RIKEN = "dosing_volume/tip_visual_error_2410/data/RIKEN_yokohama_tip_D405/img_2/"
-dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
+# dataset_dir = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/data/spiral_t_hex/'
+# dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
+dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet']
 mode = 'inference'  # ['train', 'inference', 'loop_inference']
 train_batch_size = 64
 test_batch_size = 1
 solver = 'ddpm'
-diffusion_steps = 10
+diffusion_steps = 20
 predict_noise = False # [True, False]
 obs_steps = 1
 action_steps = 1
@@ -55,21 +58,34 @@ action_loss_weight = 1.0
 device = 'cuda'
 diffusion_gradient_steps = 200000
 log_interval = 100
-save_interval = 1000
+save_interval = 5000
 lr = 0.00001
 num_epochs = 1000
 
 action_dim = 1
 horizon = 4
 obs_steps = 1
-shape_meta = {
-    'obs': {
-        'image': {
-            'shape': (3, 120, 120),   # (channels, height, width) for image inputs
-            'type': 'rgb'           # 'rgb'
+if dataset_name == 'spiral_visual_error_diffusion':
+    shape_meta = {
+        'obs': {
+            'image': {
+                'shape': (3, 45, 80),   # (channels, height, width) for image inputs
+                'type': 'rgb'           # 'rgb'
+            }
         }
     }
-}
+elif dataset_name == 'visual_error_diffusion':
+    shape_meta = {
+        'obs': {
+            'image': {
+                'shape': (3, 120, 120),   # (channels, height, width) for image inputs
+                'type': 'rgb'           # 'rgb'
+            }
+        }
+    }
+else:
+    raise ValueError(f"Invalid dataset name: {dataset_name}")
+
 rgb_model = 'resnet18' # ['resnet18', 'resnet50']
 use_group_norm = True
 ema_rate = 0.9999
@@ -93,13 +109,13 @@ if __name__ == '__main__':
     # train_list, test_list = load_data(dataset_dir, seed)
     # trainset_list = np.array(train_list)
     # testset_list = np.array(test_list)
-    # np.save('visual_error_diffusion_training.npy', trainset_list)
-    # np.save('visual_error_diffusion_testing.npy', testset_list)
+    # np.save('spiral_visual_error_diffusion_training.npy', trainset_list)
+    # np.save('spiral_visual_error_diffusion_testing.npy', testset_list)
     # exit() # exit after saving the dataset
 
     '''load the dataset from npy file'''
-    train_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_training.npy', allow_pickle=True)
-    test_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_testing.npy', allow_pickle=True)
+    train_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_training.npy', allow_pickle=True)
+    test_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_testing.npy', allow_pickle=True)
 
     train_list = train_data.tolist()
     test_list = test_data.tolist()
@@ -226,11 +242,7 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1108_1707_chiunet_train/diffusion_ckpt_latest.pt' # current best, though class = 60 wrongly
-        
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1638_transformer_4_resnet18_train/diffusion_ckpt_latest.pt'
-        # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1639_transformer_1_resnet18_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1120_1438_unet_h4_resnet18_steps10_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1511_unet_h4_resnet18_steps20_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
@@ -246,7 +258,7 @@ if __name__ == '__main__':
             raise ValueError(f"Invalid backbone: {backbone}")
 
         with torch.no_grad():
-            for batch in (test_loader):
+            for batch in tqdm(test_loader):
                 if backbone == 'transformer':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                     condition = {'image': img}

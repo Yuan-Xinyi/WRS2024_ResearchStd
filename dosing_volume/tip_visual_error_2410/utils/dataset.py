@@ -37,7 +37,8 @@ def load_data(dataset_dir, seed, test_size=0.2):
     """
     Load the dataset, split it into training and validation sets, and return the data loaders.
     """
-    dataset_list = glob.glob(os.path.join(dataset_dir, '*/*.jpg'))
+    # dataset_list = glob.glob(os.path.join(dataset_dir, '*/*.jpg'))
+    dataset_list = glob.glob(os.path.join(dataset_dir, '*/*.png'))
 
     labels = [path.split("/")[-1].split(".")[0] for path in dataset_list]
 
