@@ -44,20 +44,30 @@ from linformer import Linformer
 '''preparations'''
 device_check()
 seed = 0
-mode = 'inference' # 'train' or 'inference'
+dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
+mode = 'train' # 'train' or 'inference'
 train_batch_size = 256
 test_batch_size = 1
 
-image_size=(120,120)
-patch_size=10
+if dataset_name == 'spiral_visual_error_diffusion':
+    image_size=(45,80)
+    patch_size=5
+elif dataset_name == 'visual_error_diffusion':
+    image_size=(120,120)
+    patch_size=10
+else:
+    raise ValueError(f"Invalid dataset_name: {dataset_name}")
+
 dim=128
 epochs = 1000
 lr = 3e-5
 gamma = 0.7
 
 # seed_everything(1)
+'''dataset dir list'''
 # dataset_dir_RIKEN = "dosing_volume/tip_visual_error_2410/data/RIKEN_yokohama_tip_D405/img_2/"
-dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
+dataset_dir = '/home/lqin/wrs_2024/dosing_volume/tip_visual_error_2410/data/spiral_t_hex/'
+# dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 if __name__ == '__main__':
     # --------------- Data Loading -----------------
@@ -68,8 +78,8 @@ if __name__ == '__main__':
         os.makedirs(save_path)
 
     '''load the dataset from npy file'''
-    train_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_training.npy', allow_pickle=True)
-    test_data = np.load('dosing_volume/tip_visual_error_2410/data/visual_error_diffusion_testing.npy', allow_pickle=True)
+    train_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_training.npy', allow_pickle=True)
+    test_data = np.load(f'dosing_volume/tip_visual_error_2410/data/{dataset_name}_testing.npy', allow_pickle=True)
 
     train_list = train_data.tolist()
     test_list = test_data.tolist()
