@@ -195,3 +195,71 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
                 torch.ones(tokens.shape[1], tokens.shape[1], device=condition["image"].device), diagonal=0)
 
         return self.tfm(tokens, self.mask_cache)[0][:, -1]
+
+
+class FlexibleEarlyConvViTMultiViewImageCondition(EarlyConvViTMultiViewImageCondition):
+    """ Flexible Early-CNN Vision Transformer (ViT) for multi-view image condition.
+    
+    Extends EarlyConvViTMultiViewImageCondition to support non-rectangular image inputs
+    by dynamically handling token lengths and position embeddings.
+    """
+    def __init__(
+        self,
+        image_sz: Tuple[Tuple[int, int]] = ((64, 64), (64, 64)),  # Non-rectangular sizes (H, W) per view
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.image_sz = image_sz  # Update image size to support per-view (H, W)
+        self.n_views = len(image_sz)
+
+    @property
+    def image_token_lens(self):
+        """ Dynamically calculate token lengths for non-rectangular inputs. """
+        examples = [
+            torch.randn((1, self.in_channels[i], *self.image_sz[i]))
+            for i in range(self.n_views)
+        ]
+        return [self.patchifies[i](examples[i]).shape[1] for i in range(self.n_views)]
+
+    def forward(self, condition: Dict[str, torch.Tensor], mask: Optional[torch.Tensor] = None):
+        b, v, t, c, h, w = condition["image"].shape
+
+        # Verify the input image sizes match the defined sizes for each view
+        for i in range(v):
+            expected_h, expected_w = self.image_sz[i]
+            if (h, w) != (expected_h, expected_w):
+                raise ValueError(f"Input image size for view {i} is {(h, w)}, expected {(expected_h, expected_w)}.")
+
+        tokens = []
+
+        if self.lowdim_proj is not None:
+            tokens.append(
+                self.lowdim_proj(condition["lowdim"]) + self.lowdim_emb
+            )
+
+        for i in range(v):
+            # Process each view with its respective patchify module
+            view_tokens = self.patchifies[i](
+                einops.rearrange(condition["image"][:, i], "b t c h w -> (b t) c h w")
+            )
+            view_tokens = (
+                einops.rearrange(view_tokens, "(b t) n d -> b (t n) d", b=b)
+                + self.view_emb[i]
+            )
+            # Dynamically adjust position embeddings for non-rectangular inputs
+            pos_emb = self.pos_emb[i][:, :view_tokens.shape[1], :]
+            view_tokens += pos_emb
+
+            tokens.append(view_tokens)
+
+        tokens.append(self.readout_emb.repeat(b, 1, 1))
+
+        tokens = torch.cat(tokens, dim=1)
+
+        if self.mask_cache is None or tokens.shape[1] != self.mask_cache.shape[1]:
+            self.mask_cache = torch.tril(
+                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["image"].device), diagonal=0
+            )
+
+        return self.tfm(tokens, self.mask_cache)[0][:, -1]

@@ -40,7 +40,7 @@ seed = 0
 # dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
-dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
+dataset_name = 'visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet']
 mode = 'inference'  # ['train', 'inference', 'loop_inference']
 train_batch_size = 64
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1511_unet_h4_resnet18_steps20_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1530_unet_h4_resnet18_steps20_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()

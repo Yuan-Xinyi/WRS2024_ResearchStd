@@ -24,6 +24,7 @@ from linformer import Linformer
 '''cleandiffuser imports'''
 from datetime import datetime
 from cleandiffuser.nn_condition import MultiImageObsCondition, EarlyConvViTMultiViewImageCondition
+from cleandiffuser.nn_condition import FlexibleEarlyConvViTMultiViewImageCondition
 from cleandiffuser.nn_condition import ViTImageCondition
 from cleandiffuser.nn_diffusion import ChiTransformer, ChiUNet1d
 from cleandiffuser.utils import report_parameters
@@ -42,7 +43,7 @@ seed = 0
 # diffuser parameters
 dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet', 'vit']
-mode = 'inference'  # ['train', 'inference', 'loop_inference']
+mode = 'train'  # ['train', 'inference', 'loop_inference']
 condition_encoder = 'cnn_vit' # ['multi_image_obs', 'cnn_vit', 'vit']
 train_batch_size = 64
 test_batch_size = 1
@@ -149,7 +150,7 @@ if __name__ == '__main__':
         nn_condition = EarlyConvViTMultiViewImageCondition(image_sz=(120,), in_channels=(3,), To=obs_steps, 
                                                            d_model=256, nhead=8, num_layers=12, patch_size=(16,)).to(device)
     elif condition_encoder == 'vit':
-        dim, image_size, patch_size, channels = 256, (120, 120), 10, 3
+        dim, image_size, patch_size, channels = 256, shape_meta['obs']['image']['shape'][1:], 5, 3
         efficient_transformer = Linformer(
             dim=dim, seq_len=int(np.prod(image_size) / (patch_size ** 2)) + 1,  # mxn patches + 1 cls-token
             depth=12, heads=8, k=64)
