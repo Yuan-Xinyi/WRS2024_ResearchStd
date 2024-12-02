@@ -45,7 +45,7 @@ from linformer import Linformer
 device_check()
 seed = 0
 dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
-mode = 'train' # 'train' or 'inference'
+mode = 'inference' # 'train' or 'inference'
 train_batch_size = 256
 test_batch_size = 1
 
@@ -161,7 +161,8 @@ if __name__ == '__main__':
         checkpoints = [str(i) for i in range(100, 1100, 100)]
         for checkpoint in checkpoints:
             inference_losses = []
-            PATH = f'dosing_volume/tip_visual_error_2410/results/diffuser/1113_1748_ViT_train/model{checkpoint}'
+            PATH = f'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1713_ViT_train/model{checkpoint}'
+            print(f"Loading model from {checkpoint}")
             model.load_state_dict(torch.load(PATH))
             model.to(device)
             model.eval()  # Set the model to evaluation mode
@@ -204,7 +205,7 @@ if __name__ == '__main__':
             plt.legend()
             plt.grid()
             plt.savefig(save_path + f"{checkpoint}_loss_distribution.png")
-            exit()
+            # exit()
     
     else:
         raise ValueError(f"Invalid mode: {mode}")

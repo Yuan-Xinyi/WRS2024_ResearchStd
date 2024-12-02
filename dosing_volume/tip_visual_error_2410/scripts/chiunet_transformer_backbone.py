@@ -40,7 +40,7 @@ seed = 0
 # dataset_dir = 'dosing_volume/tip_visual_error_2410/data/mbp_D405/'
 
 # diffuser parameters
-dataset_name = 'visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
+dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet']
 mode = 'inference'  # ['train', 'inference', 'loop_inference']
 train_batch_size = 64
@@ -64,7 +64,6 @@ num_epochs = 1000
 
 action_dim = 1
 horizon = 4
-obs_steps = 1
 if dataset_name == 'spiral_visual_error_diffusion':
     shape_meta = {
         'obs': {
@@ -242,7 +241,7 @@ if __name__ == '__main__':
     
     elif mode == 'inference':
         # ---------------------- Testing ----------------------
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1530_unet_h4_resnet18_steps20_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1126_1511_unet_h4_resnet18_steps20_train/diffusion_ckpt_latest.pt'
 
         agent.load(load_path)
         agent.eval()
@@ -258,7 +257,7 @@ if __name__ == '__main__':
             raise ValueError(f"Invalid backbone: {backbone}")
 
         with torch.no_grad():
-            for batch in tqdm(test_loader):
+            for batch in (test_loader):
                 if backbone == 'transformer':
                     img, gth_label = batch[0].to(device).float(), batch[1].to(device).float()  # [image, label]
                     condition = {'image': img}

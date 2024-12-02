@@ -43,8 +43,8 @@ seed = 0
 # diffuser parameters
 dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet', 'vit']
-mode = 'train'  # ['train', 'inference', 'loop_inference']
-condition_encoder = 'cnn_vit' # ['multi_image_obs', 'cnn_vit', 'vit']
+mode = 'inference'  # ['train', 'inference', 'loop_inference']
+condition_encoder = 'vit' # ['multi_image_obs', 'cnn_vit', 'vit']
 train_batch_size = 64
 test_batch_size = 1
 solver = 'ddpm'
@@ -246,7 +246,7 @@ if __name__ == '__main__':
         # ---------------------- Testing ----------------------
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1608_unet_h4_cnn_vit_train/diffusion_ckpt_latest.pt'
         # load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1115_1739_unet_h4_vit_train/diffusion_ckpt_latest.pt'
-        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1125_1242_unet_b64_h4_cnn_vit_train/diffusion_ckpt_latest.pt'
+        load_path = 'dosing_volume/tip_visual_error_2410/results/diffuser/1127_1036_unet_b64_h4_vit_train/diffusion_ckpt_latest.pt'
         agent.load(load_path)
         agent.eval()
         agent.model.eval()
