@@ -42,7 +42,7 @@ seed = 0
 # diffuser parameters
 dataset_name = 'spiral_visual_error_diffusion'  # ['spiral_visual_error_diffusion' for 2 cameras, 'visual_error_diffusion' for single camera]
 backbone = 'unet' # ['transformer', 'unet']
-mode = 'inference'  # ['train', 'inference', 'loop_inference']
+mode = 'train'  # ['train', 'inference', 'loop_inference']
 train_batch_size = 64
 test_batch_size = 1
 solver = 'ddpm'
